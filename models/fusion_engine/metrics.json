@@ -1,0 +1,44 @@
+{
+  "fusion_model": "XGBoost Meta-Classifier (Late Decision Fusion)",
+  "modalities": [
+    "Text (Bio_ClinicalBERT/TF-IDF)",
+    "Speech (MFCC XGBoost)",
+    "Behavioral (StudentLife RF)"
+  ],
+  "test_accuracy": 1.0,
+  "test_f1_macro": 1.0,
+  "high_risk_recall": 1.0,
+  "classification_report": {
+    "Low": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 178.0
+    },
+    "Moderate": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 41.0
+    },
+    "High": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 31.0
+    },
+    "accuracy": 1.0,
+    "macro avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 250.0
+    },
+    "weighted avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 250.0
+    }
+  }
+}
