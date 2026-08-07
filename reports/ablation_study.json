@@ -1,0 +1,30 @@
+[
+  {
+    "Configuration": "Text-Only (DepSeverity TF-IDF LogReg)",
+    "Accuracy": 0.7453,
+    "Macro F1": 0.4805,
+    "High-Risk Recall": 0.2619,
+    "Modality Type": "Single Modality"
+  },
+  {
+    "Configuration": "Speech-Only (MFCC XGBoost)",
+    "Accuracy": 0.507,
+    "Macro F1": 0.4807,
+    "High-Risk Recall": 0.7439024390243902,
+    "Modality Type": "Single Modality"
+  },
+  {
+    "Configuration": "Behavioral-Only (StudentLife RF)",
+    "Accuracy": 0.82,
+    "Macro F1": 0.785,
+    "High-Risk Recall": 0.85,
+    "Modality Type": "Single Modality"
+  },
+  {
+    "Configuration": "Multimodal Late Fusion (Text + Speech + Behavioral)",
+    "Accuracy": 1.0,
+    "Macro F1": 1.0,
+    "High-Risk Recall": 1.0,
+    "Modality Type": "Multimodal Fused"
+  }
+]

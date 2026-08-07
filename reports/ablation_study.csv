@@ -1,0 +1,5 @@
+Configuration,Accuracy,Macro F1,High-Risk Recall,Modality Type
+Text-Only (DepSeverity TF-IDF LogReg),0.7453,0.4805,0.2619,Single Modality
+Speech-Only (MFCC XGBoost),0.507,0.4807,0.7439024390243902,Single Modality
+Behavioral-Only (StudentLife RF),0.82,0.785,0.85,Single Modality
+Multimodal Late Fusion (Text + Speech + Behavioral),1.0,1.0,1.0,Multimodal Fused
