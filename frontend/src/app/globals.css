@@ -1,1 +1,146 @@
 @import "tailwindcss";
+
+/* ══════════════════════════════════════════════════════════════════════
+   EmoCare Design System — "Serene Intelligence" (Stitch Source of Truth)
+   Stitch Project: projects/16761342864923716572
+   ══════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── Color Palette (Stitch "Serene Intelligence" tokens) ────────── */
+  --color-background: #f9f9ff;
+  --color-surface: #f9f9ff;
+  --color-surface-bright: #f9f9ff;
+  --color-surface-dim: #d1daf4;
+  --color-surface-variant: #d9e2fc;
+  --color-surface-container: #e9edff;
+  --color-surface-container-low: #f1f3ff;
+  --color-surface-container-high: #e1e8ff;
+  --color-surface-container-highest: #d9e2fc;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-tint: #4d5c8e;
+
+  --color-primary: #4d5c8e;
+  --color-primary-container: #6675a8;
+  --color-primary-fixed: #dbe1ff;
+  --color-primary-fixed-dim: #b5c5fd;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #000419;
+  --color-on-primary-fixed: #051846;
+  --color-on-primary-fixed-variant: #354574;
+  --color-inverse-primary: #b5c5fd;
+
+  --color-secondary: #635a75;
+  --color-secondary-container: #eaddfe;
+  --color-secondary-fixed: #eaddfe;
+  --color-secondary-fixed-dim: #cdc1e1;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #69607b;
+  --color-on-secondary-fixed: #1f182f;
+  --color-on-secondary-fixed-variant: #4b435c;
+
+  --color-tertiary: #545d68;
+  --color-tertiary-container: #6c7581;
+  --color-tertiary-fixed: #dae3f0;
+  --color-tertiary-fixed-dim: #bec7d4;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #fdfcff;
+  --color-on-tertiary-fixed: #131c25;
+  --color-on-tertiary-fixed-variant: #3f4852;
+
+  --color-on-background: #121b2e;
+  --color-on-surface: #121b2e;
+  --color-on-surface-variant: #45464f;
+  --color-inverse-surface: #273044;
+  --color-inverse-on-surface: #edf0ff;
+
+  --color-outline: #757680;
+  --color-outline-variant: #c5c6d0;
+
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #93000a;
+
+  /* ── Semantic Status Badge Colors ─────────────────────────────── */
+  --color-risk-low: #059669;
+  --color-risk-low-bg: rgba(5, 150, 105, 0.1);
+  --color-risk-moderate: #d97706;
+  --color-risk-moderate-bg: rgba(217, 119, 6, 0.1);
+  --color-risk-high: #c0564b;
+  --color-risk-high-bg: rgba(192, 86, 75, 0.1);
+
+  /* ── Typography ───────────────────────────────────────────────── */
+  --font-sans: "Geist Sans", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  /* ── Spacing Tokens ───────────────────────────────────────────── */
+  --spacing-base: 8px;
+  --spacing-container-mobile: 20px;
+  --spacing-container-desktop: 80px;
+  --spacing-gutter: 24px;
+  --spacing-stack-sm: 12px;
+  --spacing-stack-md: 24px;
+  --spacing-stack-lg: 48px;
+
+  /* ── Box Shadows ──────────────────────────────────────────────── */
+  --shadow-ambient: 0px 4px 24px rgba(15, 23, 42, 0.04);
+  --shadow-ambient-hover: 0px 8px 32px rgba(15, 23, 42, 0.08);
+}
+
+/* ── Glass Panel Utility ─────────────────────────────────────────── */
+.glass-panel {
+  background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--color-outline-variant) 30%, transparent);
+  box-shadow: var(--shadow-ambient);
+}
+
+.glass-panel-hover:hover {
+  box-shadow: var(--shadow-ambient-hover);
+  transition: box-shadow 0.3s ease;
+}
+
+/* ── Gradient Background ─────────────────────────────────────────── */
+.gradient-bg {
+  background-image:
+    radial-gradient(circle at 0% 0%, rgba(102, 117, 168, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 100% 100%, rgba(165, 154, 184, 0.08) 0%, transparent 50%);
+}
+
+/* ── Material Symbols Base ───────────────────────────────────────── */
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "liga";
+}
+
+/* ── Selection color ─────────────────────────────────────────────── */
+::selection {
+  background-color: var(--color-primary-container);
+  color: var(--color-on-primary-container);
+}
+
+/* ── CTA Smooth Scale Effects ────────────────────────────────────── */
+.cta-btn {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
+}
+.cta-btn:hover {
+  transform: scale(1.04);
+}
+.cta-btn:active {
+  transform: scale(0.97);
+}
+
