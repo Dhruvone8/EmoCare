@@ -101,9 +101,30 @@ export interface HealthResponse {
   version: string;
 }
 
+// ── Self-Assessment (PHQ-9 & GAD-7) ───────────────────────────────────
+export interface AssessmentSubmissionRequest {
+  user_id: string;
+  test_type: "phq9" | "gad7";
+  responses: number[];
+}
+
+export interface AssessmentResponse {
+  id?: number | null;
+  user_id: string;
+  test_type: string;
+  test_display_name: string;
+  total_score: number;
+  max_score: number;
+  severity_band: string;
+  risk_tier: "Low" | "Moderate" | "High";
+  plain_language_summary: string;
+  timestamp: string;
+}
+
 // ── Multimodal Request (used by the API client) ──────────────────────
 export interface MultimodalRequest {
   text?: string;
   audio?: Blob;
   behavioral?: BehavioralRequest;
 }
+

@@ -77,7 +77,8 @@ EmoCare/
    uvicorn src.api.main:app --reload
    ```
 
-4. **Run Streamlit Dashboard**
-   ```bash
-   streamlit run src/dashboard/app.py
+4. **Run frontend terminal**
+   ```
+   cd frontend
+   npm run dev
    ```

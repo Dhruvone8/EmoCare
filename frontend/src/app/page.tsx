@@ -3,7 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { healthCheck } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import type { HealthResponse } from "@/types/api";
+
+interface BaselineAssessment {
+  test_type: string;
+  total_score: number;
+  max_score: number;
+  severity_band: string;
+  risk_tier: "Low" | "Moderate" | "High";
+  date: string;
+}
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -13,25 +23,44 @@ function getGreeting(): string {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [baseline, setBaseline] = useState<BaselineAssessment | null>(null);
 
   useEffect(() => {
     healthCheck()
       .then(setHealth)
       .catch(() => setHealth(null))
       .finally(() => setLoading(false));
+
+    // Load last self-assessment attempt
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("emocare_last_assessment");
+      if (stored) {
+        try {
+          setBaseline(JSON.parse(stored));
+        } catch {
+          // ignore parsing error
+        }
+      }
+    }
   }, []);
 
   const systemReady =
     health && Object.values(health.models_loaded).every(Boolean);
+
+  const userName =
+    user?.user_metadata?.full_name?.split(" ")[0] ||
+    user?.email?.split("@")[0] ||
+    "Friend";
 
   return (
     <>
       {/* ── Welcome Section ───────────────────────────────────────── */}
       <section className="max-w-3xl">
         <h1 className="font-sans text-[32px] md:text-[48px] font-semibold text-on-surface tracking-tight leading-tight mb-[var(--spacing-stack-sm)]">
-          {getGreeting()}. 👋
+          {getGreeting()}, {userName}. 👋
           <br />
           <span className="text-primary/70">
             How are you feeling today?
@@ -39,9 +68,39 @@ export default function DashboardPage() {
         </h1>
         <p className="font-sans text-[18px] text-on-surface-variant max-w-2xl mt-4 leading-7">
           This is your safe space. Take a moment to check in with yourself —
-          write, talk, or simply reflect.
+          write, talk, or calibrate your emotional baseline.
         </p>
       </section>
+
+      {/* ── Onboarding Banner (If no baseline test completed yet) ── */}
+      {!baseline && (
+        <section className="glass-panel rounded-2xl p-6 md:p-8 bg-gradient-to-r from-primary/10 via-surface to-secondary-container/20 border-2 border-primary/30 shadow-lg relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-start gap-4 max-w-xl">
+            <div className="p-3.5 rounded-2xl bg-primary text-on-primary shadow-md shrink-0">
+              <span className="material-symbols-outlined text-3xl">assignment_turned_in</span>
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-primary/15 text-primary text-xs font-semibold uppercase tracking-wider mb-2">
+                <span>Step 1 • Onboarding</span>
+              </div>
+              <h2 className="text-xl md:text-2xl font-semibold text-on-surface">
+                Calibrate Your Emotional Baseline
+              </h2>
+              <p className="text-sm text-on-surface-variant mt-1.5 leading-relaxed">
+                Take the quick 2-minute clinical screening (PHQ-9 / GAD-7) so EmoCare can personalize its insights and support for your journey.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/assessment"
+            className="w-full md:w-auto px-7 py-3.5 rounded-full bg-primary hover:bg-primary/90 text-on-primary font-medium text-sm transition-all shadow-md hover:shadow-xl flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+          >
+            <span>Start Self-Assessment</span>
+            <span className="material-symbols-outlined text-sm">arrow_forward</span>
+          </Link>
+        </section>
+      )}
 
       {/* ── Main Grid ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-[var(--spacing-gutter)]">
@@ -64,50 +123,80 @@ export default function DashboardPage() {
                 </span>
               </div>
               <div className="flex items-center gap-4 mb-4">
-                <WellnessBadge status={loading ? "loading" : "good"} />
+                <WellnessBadge
+                  status={
+                    loading
+                      ? "loading"
+                      : baseline
+                      ? baseline.risk_tier === "Low"
+                        ? "good"
+                        : baseline.risk_tier === "Moderate"
+                        ? "mixed"
+                        : "tough"
+                      : "good"
+                  }
+                />
               </div>
               <p className="font-sans text-[16px] text-on-surface-variant mt-2 max-w-md leading-7">
-                {loading
-                  ? "Checking in on your signals..."
-                  : "Your recent signals look stable. Keep doing what you're doing — and remember, it's okay to have off days too."}
+                {baseline ? (
+                  <>
+                    Baseline: <strong>{baseline.test_type.toUpperCase()}</strong> score of{" "}
+                    <strong>
+                      {baseline.total_score}/{baseline.max_score}
+                    </strong>{" "}
+                    ({baseline.severity_band}). Keep checking in to observe trends over time.
+                  </>
+                ) : (
+                  "Take your initial self-assessment check-in to calibrate your real-time wellness pulse."
+                )}
               </p>
             </div>
+
+            {baseline && (
+              <div className="relative z-10 pt-4 border-t border-outline-variant/15 flex justify-between items-center text-xs text-on-surface-variant">
+                <span>Last assessed: {new Date(baseline.date).toLocaleDateString()}</span>
+                <Link href="/assessment" className="text-primary font-medium hover:underline flex items-center gap-1">
+                  <span>Retake test</span>
+                  <span className="material-symbols-outlined text-xs">refresh</span>
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Daily Snapshot Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--spacing-gutter)]">
             <SnapshotCard
+              icon="psychology"
+              label="Baseline Screener"
+              value={baseline ? `${baseline.risk_tier} Risk (${baseline.severity_band})` : "Not taken yet"}
+              hint={baseline ? `${baseline.test_type.toUpperCase()} Score: ${baseline.total_score}/${baseline.max_score}` : "Take 2-min onboarding check-in"}
+            />
+            <SnapshotCard
               icon="edit_note"
               label="Journal"
-              value={loading ? "..." : "Feeling positive"}
-              hint="Last entry was calm and reflective"
+              value={loading ? "..." : "Reflective space"}
+              hint="Express your thoughts freely"
             />
             <SnapshotCard
               icon="mic"
               label="Voice"
-              value={loading ? "..." : "Calm & steady"}
-              hint="Your tone sounds relaxed"
-            />
-            <SnapshotCard
-              icon="check_circle"
-              label="Daily check-in"
-              value={loading ? "..." : "Completed"}
-              hint="Logged 2 hours ago"
+              value={loading ? "..." : "Speech Emotion"}
+              hint="Analyze tone and prosody"
             />
             <SnapshotCard
               icon="shield"
-              label="EmoCare status"
+              label="EmoCare AI Status"
               value={
                 loading
                   ? "..."
                   : systemReady
-                    ? "Watching over you"
-                    : "Setting up..."
+                    ? "Active & Ready"
+                    : "Calibrating..."
               }
               hint={
                 systemReady
-                  ? "All systems are active"
-                  : "Some features loading"
+                  ? "Multimodal engine connected"
+                  : "Connecting backend"
               }
             />
           </div>
@@ -121,39 +210,51 @@ export default function DashboardPage() {
               What would you like to do?
             </h3>
             <ActionCard
-              href="/journal"
-              icon="edit_note"
+              href="/assessment"
+              icon="assignment"
               iconBg="bg-primary-container/20"
               iconColor="text-primary"
               hoverBg="group-hover:bg-primary"
               hoverColor="group-hover:text-on-primary"
               hoverArrow="group-hover:text-primary"
+              title="Self-Assessment (PHQ-9 / GAD-7)"
+              subtitle="Calibrate baseline depression/anxiety"
+            />
+            <ActionCard
+              href="/journal"
+              icon="edit_note"
+              iconBg="bg-secondary-container/30"
+              iconColor="text-secondary"
+              hoverBg="group-hover:bg-secondary"
+              hoverColor="group-hover:text-on-secondary"
+              hoverArrow="group-hover:text-secondary"
               title="Write in your journal"
               subtitle="Express your thoughts freely"
             />
             <ActionCard
               href="/voice"
               icon="mic"
-              iconBg="bg-secondary-container/30"
-              iconColor="text-secondary"
-              hoverBg="group-hover:bg-secondary"
-              hoverColor="group-hover:text-on-secondary"
-              hoverArrow="group-hover:text-secondary"
+              iconBg="bg-tertiary-fixed/50"
+              iconColor="text-tertiary"
+              hoverBg="group-hover:bg-tertiary"
+              hoverColor="group-hover:text-on-tertiary"
+              hoverArrow="group-hover:text-tertiary"
               title="Talk it out"
               subtitle="Share how you're feeling out loud"
             />
             <ActionCard
               href="/checkin"
               icon="mood"
-              iconBg="bg-tertiary-fixed/50"
-              iconColor="text-tertiary"
-              hoverBg="group-hover:bg-tertiary"
-              hoverColor="group-hover:text-on-tertiary"
-              hoverArrow="group-hover:text-tertiary"
-              title="Daily check-in"
-              subtitle="A quick wellness snapshot"
+              iconBg="bg-surface-variant/50"
+              iconColor="text-on-surface-variant"
+              hoverBg="group-hover:bg-primary"
+              hoverColor="group-hover:text-on-primary"
+              hoverArrow="group-hover:text-primary"
+              title="Daily habits check-in"
+              subtitle="Sleep, mood, and activity snapshot"
             />
           </div>
+
 
           {/* Supportive Card */}
           <div className="glass-panel rounded-xl overflow-hidden group relative min-h-[200px] flex items-end">

@@ -18,6 +18,8 @@ import type {
   BehavioralResponse,
   MultimodalResponse,
   MultimodalRequest,
+  AssessmentSubmissionRequest,
+  AssessmentResponse,
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -135,4 +137,17 @@ export async function predictMultimodal(
   });
 }
 
+// ── Assessment Prediction / Submission ───────────────────────────────
+
+export async function submitAssessment(
+  data: AssessmentSubmissionRequest
+): Promise<AssessmentResponse> {
+  return apiFetch<AssessmentResponse>("/api/assessment/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
 export { ApiError };
+

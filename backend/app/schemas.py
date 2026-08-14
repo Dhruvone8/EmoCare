@@ -97,3 +97,24 @@ class HealthResponse(BaseModel):
     status: str
     models_loaded: dict[str, bool]
     version: str = "1.0.0"
+
+
+# ── Self-Assessment (PHQ-9 & GAD-7) ───────────────────────────────────
+class AssessmentSubmissionRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, description="Unique user or session identifier")
+    test_type: str = Field(..., description="'phq9' or 'gad7'")
+    responses: list[int] = Field(..., description="List of responses (0-3 each, 9 items for PHQ-9, 7 for GAD-7)")
+
+
+class AssessmentResponse(BaseModel):
+    id: Optional[int] = None
+    user_id: str
+    test_type: str
+    test_display_name: str
+    total_score: int
+    max_score: int
+    severity_band: str
+    risk_tier: str = Field(..., description="Mapped app risk tier: Low | Moderate | High")
+    plain_language_summary: str
+    timestamp: str
+

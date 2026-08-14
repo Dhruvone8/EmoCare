@@ -15,8 +15,23 @@ import os
 import logging
 from contextlib import asynccontextmanager
 
+# Auto-load .env from backend/ or root
+try:
+    from dotenv import load_dotenv
+    backend_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+    root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+    if os.path.exists(backend_env):
+        load_dotenv(backend_env)
+    elif os.path.exists(root_env):
+        load_dotenv(root_env)
+    else:
+        load_dotenv()
+except ImportError:
+    pass
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
 
 from .model_loader import models
 from .schemas import (
@@ -27,8 +42,13 @@ from .schemas import (
     BehavioralRequest,
     BehavioralResponse,
     MultimodalResponse,
+    AssessmentSubmissionRequest,
+    AssessmentResponse,
 )
 from .inference import predict_text, predict_speech, predict_behavioral, predict_multimodal
+from .assessment import process_assessment, PHQ9_QUESTIONS, GAD7_QUESTIONS, RESPONSE_SCALE
+from .db import init_db
+
 
 # ── Logging ────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -41,14 +61,16 @@ logger = logging.getLogger("emocare")
 MODELS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "models"))
 
 
-# ── Lifespan: load models on startup ──────────────────────────────────
+# ── Lifespan: load models & init DB on startup ────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Loading models from: {MODELS_ROOT}")
     models.load_all(MODELS_ROOT)
+    init_db()
     logger.info("EmoCare backend ready.")
     yield
     logger.info("EmoCare backend shutting down.")
+
 
 
 # ── FastAPI App ────────────────────────────────────────────────────────
@@ -192,3 +214,58 @@ async def api_predict_multimodal(
         )
 
     return predict_multimodal(text=text, audio_bytes=audio_bytes, behavioral=behavioral)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# SELF-ASSESSMENT ROUTES (PHQ-9 & GAD-7)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@app.get("/api/assessment/questions/{test_type}")
+async def get_assessment_questions(test_type: str):
+    """
+    Get questionnaire items and scoring scales for PHQ-9 or GAD-7.
+    """
+    test_type_clean = test_type.lower().strip().replace("-", "")
+    if test_type_clean == "phq9":
+        return {
+            "test_type": "phq9",
+            "title": "PHQ-9 (Depression Screening)",
+            "timeframe": "Over the last 2 weeks, how often have you been bothered by any of the following problems?",
+            "scale": RESPONSE_SCALE,
+            "questions": PHQ9_QUESTIONS,
+        }
+    elif test_type_clean == "gad7":
+        return {
+            "test_type": "gad7",
+            "title": "GAD-7 (Anxiety Screening)",
+            "timeframe": "Over the last 2 weeks, how often have you been bothered by the following problems?",
+            "scale": RESPONSE_SCALE,
+            "questions": GAD7_QUESTIONS,
+        }
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid test_type. Supported types: 'phq9', 'gad7'",
+        )
+
+
+@app.post("/api/assessment/submit", response_model=AssessmentResponse)
+async def submit_assessment(request: AssessmentSubmissionRequest):
+    """
+    Submit PHQ-9 or GAD-7 responses, calculate total score, map severity band & risk tier,
+    store to PostgreSQL, and return evaluation summary.
+    """
+    try:
+        result = process_assessment(
+            user_id=request.user_id,
+            test_type=request.test_type,
+            responses=request.responses,
+        )
+        return AssessmentResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Assessment evaluation failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error evaluating assessment")
+

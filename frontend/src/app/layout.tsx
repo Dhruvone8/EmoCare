@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
+import { AuthProvider } from "@/context/AuthContext";
+import { AuthModal } from "@/components/AuthModal";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -22,7 +24,11 @@ export const metadata: Metadata = {
     "AI-powered affective computing for early emotional insight and support. An intelligent system for early detection & support of mental health distress.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
@@ -32,12 +38,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         />
       </head>
       <body className="bg-background text-on-surface font-sans antialiased min-h-screen gradient-bg flex flex-col relative overflow-x-hidden">
-        <Navigation />
-        <main className="flex-grow w-full max-w-[1200px] mx-auto px-[var(--spacing-container-mobile)] md:px-[var(--spacing-container-desktop)] py-[var(--spacing-stack-lg)] flex flex-col gap-[var(--spacing-stack-lg)] z-10 relative">
-          {children}
-        </main>
-        <Footer />
+        <AuthProvider>
+          <Navigation />
+          <main className="flex-grow w-full max-w-[1200px] mx-auto px-[var(--spacing-container-mobile)] md:px-[var(--spacing-container-desktop)] py-[var(--spacing-stack-lg)] flex flex-col gap-[var(--spacing-stack-lg)] z-10 relative">
+            {children}
+          </main>
+          <Footer />
+          <AuthModal />
+        </AuthProvider>
       </body>
     </html>
   );
 }
+
