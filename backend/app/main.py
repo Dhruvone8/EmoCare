@@ -5,11 +5,19 @@ Multimodal Emotion-Aware AI system for early detection and support
 of mental health distress using affective computing.
 
 Endpoints:
-  GET  /health                  — Server & model status
-  POST /api/predict/text        — Text distress analysis
-  POST /api/predict/speech      — Audio emotion detection
-  POST /api/predict/behavioral  — Passive sensing risk analysis
-  POST /api/predict/multimodal  — Full late fusion engine
+  GET  /health                              — Server & model status
+  POST /api/predict/text                    — Text distress analysis
+  POST /api/predict/speech                  — Audio emotion detection
+  POST /api/predict/behavioral              — Passive sensing risk analysis
+  POST /api/predict/multimodal              — Full late fusion engine
+  GET  /api/assessment/questions/{test_type} — PHQ-9 / GAD-7 questionnaire
+  POST /api/assessment/submit               — Submit PHQ-9 / GAD-7 responses
+  POST /api/therapy/session/start           — Start a therapy session
+  POST /api/therapy/session/end             — End session & generate summary
+  GET  /api/therapy/sessions/{user_id}      — List all user sessions
+  GET  /api/therapy/session/{session_id}/messages — Get session messages
+  POST /api/chat/message                    — Chat therapy turn
+  POST /api/voice-therapy/interact          — Voice therapy turn
 """
 import os
 import logging
@@ -44,10 +52,27 @@ from .schemas import (
     MultimodalResponse,
     AssessmentSubmissionRequest,
     AssessmentResponse,
+    StartSessionRequest,
+    StartSessionResponse,
+    ChatMessageRequest,
+    ChatMessageResponse,
+    EndSessionRequest,
+    SessionSummaryResponse,
+    UserSessionListResponse,
+    VoiceTherapyResponse,
 )
 from .inference import predict_text, predict_speech, predict_behavioral, predict_multimodal
 from .assessment import process_assessment, PHQ9_QUESTIONS, GAD7_QUESTIONS, RESPONSE_SCALE
-from .db import init_db
+from .db import (
+    init_db,
+    create_therapy_session,
+    end_therapy_session,
+    get_session_messages,
+    get_recent_session_summaries,
+    get_all_user_sessions,
+)
+from .therapy import process_chat_turn, generate_session_summary
+from .engine.voice_therapy import process_voice_turn
 
 
 # ── Logging ────────────────────────────────────────────────────────────
@@ -269,3 +294,154 @@ async def submit_assessment(request: AssessmentSubmissionRequest):
         logger.error(f"Assessment evaluation failed: {e}")
         raise HTTPException(status_code=500, detail="Internal server error evaluating assessment")
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# THERAPY SESSION ROUTES
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@app.post("/api/therapy/session/start", response_model=StartSessionResponse)
+async def start_therapy_session(request: StartSessionRequest):
+    """
+    Start a new therapy session (chat or voice).
+
+    Returns session ID and the user's most recent session summaries
+    for continuity context display on the frontend.
+    """
+    session_id = create_therapy_session(
+        user_id=request.user_id,
+        mode=request.mode,
+        objective=request.objective,
+    )
+    if session_id is None:
+        raise HTTPException(status_code=500, detail="Failed to create therapy session")
+
+    # Load prior session summaries for continuity banner
+    prior_summaries = get_recent_session_summaries(request.user_id, limit=3)
+
+    from datetime import datetime, timezone
+    return StartSessionResponse(
+        session_id=session_id,
+        mode=request.mode,
+        started_at=datetime.now(timezone.utc).isoformat(),
+        prior_summaries=prior_summaries,
+    )
+
+
+@app.post("/api/therapy/session/end", response_model=SessionSummaryResponse)
+async def end_therapy_session_route(request: EndSessionRequest):
+    """
+    End a therapy session: mark as ended, generate structured summary,
+    and persist it to session_summaries for future memory context.
+    """
+    # Mark session as ended
+    ended = end_therapy_session(request.session_id)
+    if not ended:
+        raise HTTPException(status_code=500, detail="Failed to end therapy session")
+
+    # Generate and persist summary
+    summary = await generate_session_summary(
+        session_id=request.session_id,
+        user_id=request.user_id,
+    )
+
+    return SessionSummaryResponse(**summary)
+
+
+@app.get("/api/therapy/sessions/{user_id}", response_model=UserSessionListResponse)
+async def list_user_sessions(user_id: str):
+    """
+    List all therapy sessions for a user (with summaries if available).
+    Used by the /insights page to display session history.
+    """
+    sessions = get_all_user_sessions(user_id)
+    return UserSessionListResponse(sessions=sessions)
+
+
+@app.get("/api/therapy/session/{session_id}/messages")
+async def get_session_messages_route(session_id: int):
+    """
+    Retrieve all messages for a specific therapy session.
+    Returns messages in chronological order.
+    """
+    messages = get_session_messages(session_id)
+    return {"session_id": session_id, "messages": messages}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CHAT THERAPY ROUTE
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@app.post("/api/chat/message", response_model=ChatMessageResponse)
+async def chat_therapy_message(request: ChatMessageRequest):
+    """
+    Process a single chat therapy turn.
+
+    Safety pipeline:
+    1. Classifies user text for risk BEFORE the LLM sees it
+    2. If High/Critical → bypasses LLM, returns deterministic crisis protocol
+    3. Otherwise → invokes LLM with tool-calling access to CBT catalog
+    """
+    result = await process_chat_turn(
+        session_id=request.session_id,
+        user_id=request.user_id,
+        user_message=request.message,
+        mode="chat",
+    )
+
+    return ChatMessageResponse(
+        session_id=result["session_id"],
+        reply=result["reply"],
+        risk_tier=result["risk_tier"],
+        urgency_level=result.get("urgency_level", "STABLE"),
+        crisis_activated=result.get("crisis_activated", False),
+        tools_used=result.get("tools_used", []),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VOICE THERAPY ROUTE
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@app.post("/api/voice-therapy/interact", response_model=VoiceTherapyResponse)
+async def voice_therapy_interact(
+    session_id: int = Form(...),
+    user_id: str = Form(...),
+    audio: UploadFile = File(...),
+):
+    """
+    Full voice therapy pipeline:
+
+    1. Receives audio from the user
+    2. Parallel processing: Whisper STT + SER acoustic emotion analysis
+    3. Text risk classification on transcript
+    4. Multimodal safety gate (acoustic OR text risk High → crisis protocol)
+    5. Voice-mode LLM response (no markdown, spoken cadence)
+    6. ElevenLabs TTS on reply → base64 audio
+    """
+    # Read and validate audio
+    audio_bytes = await audio.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+    if len(audio_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Audio file too large (max 10 MB)")
+
+    result = await process_voice_turn(
+        session_id=session_id,
+        user_id=user_id,
+        audio_bytes=audio_bytes,
+    )
+
+    return VoiceTherapyResponse(
+        session_id=result["session_id"],
+        transcript=result["transcript"],
+        reply_text=result["reply_text"],
+        reply_audio_base64=result.get("reply_audio_base64"),
+        risk_tier=result["risk_tier"],
+        urgency_level=result.get("urgency_level", "STABLE"),
+        crisis_activated=result.get("crisis_activated", False),
+        speech_emotion=result.get("speech_emotion"),
+        tools_used=result.get("tools_used", []),
+    )

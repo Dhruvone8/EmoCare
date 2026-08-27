@@ -20,6 +20,14 @@ import type {
   MultimodalRequest,
   AssessmentSubmissionRequest,
   AssessmentResponse,
+  StartSessionRequest,
+  StartSessionResponse,
+  ChatMessageRequest,
+  ChatMessageResponse,
+  EndSessionRequest,
+  SessionSummaryResponse,
+  UserSessionListResponse,
+  VoiceTherapyResponse,
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -151,3 +159,73 @@ export async function submitAssessment(
 
 export { ApiError };
 
+
+// ═══════════════════════════════════════════════════════════════════════
+// THERAPY SESSION & CHAT API
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── Session Management ───────────────────────────────────────────────
+
+export async function startSession(
+  data: StartSessionRequest
+): Promise<StartSessionResponse> {
+  return apiFetch<StartSessionResponse>("/api/therapy/session/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function endSession(
+  data: EndSessionRequest
+): Promise<SessionSummaryResponse> {
+  return apiFetch<SessionSummaryResponse>("/api/therapy/session/end", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getUserSessions(
+  userId: string
+): Promise<UserSessionListResponse> {
+  return apiFetch<UserSessionListResponse>(
+    `/api/therapy/sessions/${encodeURIComponent(userId)}`
+  );
+}
+
+export async function getSessionMessages(
+  sessionId: number
+): Promise<{ messages: Array<{ role: string; content: string; timestamp: string }> }> {
+  return apiFetch(`/api/therapy/session/${sessionId}/messages`);
+}
+
+// ── Chat Messages ────────────────────────────────────────────────────
+
+export async function sendChatMessage(
+  data: ChatMessageRequest
+): Promise<ChatMessageResponse> {
+  return apiFetch<ChatMessageResponse>("/api/chat/message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+// ── Voice Therapy ────────────────────────────────────────────────────
+
+export async function sendVoiceTherapy(
+  sessionId: number,
+  userId: string,
+  audioBlob: Blob
+): Promise<VoiceTherapyResponse> {
+  const formData = new FormData();
+  formData.append("session_id", String(sessionId));
+  formData.append("user_id", userId);
+  formData.append("audio", audioBlob, "voice_recording.wav");
+
+  return apiFetch<VoiceTherapyResponse>("/api/voice-therapy/interact", {
+    method: "POST",
+    body: formData,
+  });
+}

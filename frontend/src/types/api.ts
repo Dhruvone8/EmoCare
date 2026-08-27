@@ -128,3 +128,88 @@ export interface MultimodalRequest {
   behavioral?: BehavioralRequest;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════
+// THERAPY SESSION & CHAT TYPES
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── Session Management ───────────────────────────────────────────────
+export interface StartSessionRequest {
+  user_id: string;
+  mode: "chat" | "voice";
+  objective?: string;
+}
+
+export interface StartSessionResponse {
+  session_id: number;
+  mode: string;
+  started_at: string;
+  prior_summaries: Array<{
+    summary_text?: string;
+    concerns?: string[];
+    goals?: string[];
+    techniques_used?: string[];
+  }>;
+}
+
+export interface EndSessionRequest {
+  session_id: number;
+  user_id: string;
+}
+
+export interface SessionSummaryResponse {
+  session_id: number;
+  summary_text: string;
+  concerns: string[];
+  goals: string[];
+  techniques_used: string[];
+}
+
+export interface UserSessionListResponse {
+  sessions: Array<{
+    id?: number;
+    session_id?: number;
+    user_id?: string;
+    mode: string;
+    started_at: string;
+    ended_at?: string | null;
+    message_count?: number;
+    objective?: string;
+    summary_text?: string;
+  }>;
+}
+
+// ── Chat Messages ────────────────────────────────────────────────────
+export interface ChatMessageRequest {
+  session_id: number;
+  user_id: string;
+  message: string;
+}
+
+export interface ToolInvocation {
+  tool_name: string;
+  tool_input: Record<string, unknown>;
+  tool_output: string;
+}
+
+export interface ChatMessageResponse {
+  session_id: number;
+  reply: string;
+  risk_tier: "Low" | "Moderate" | "High";
+  urgency_level: "STABLE" | "WARNING" | "CRITICAL";
+  crisis_activated: boolean;
+  tools_used: ToolInvocation[];
+}
+
+// ── Voice Therapy ────────────────────────────────────────────────────
+export interface VoiceTherapyResponse {
+  session_id: number;
+  transcript: string;
+  reply_text: string;
+  reply_audio_base64: string | null;
+  risk_tier: "Low" | "Moderate" | "High";
+  urgency_level: "STABLE" | "WARNING" | "CRITICAL";
+  crisis_activated: boolean;
+  speech_emotion: string | null;
+  tools_used: ToolInvocation[];
+}

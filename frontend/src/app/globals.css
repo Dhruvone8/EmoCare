@@ -1,15 +1,16 @@
 @import "tailwindcss";
 
 /* ══════════════════════════════════════════════════════════════════════
-   EmoCare Design System — "Serene Intelligence" (Stitch Source of Truth)
-   Stitch Project: projects/16761342864923716572
+   EmoCare Design System — "Digital Sanctuary"
+   Identity: Calm, premium, glassmorphism, high whitespace, non-clinical.
+   Palette: Pearl White, Cool Glass, Deep Navy, Muted Indigo, Soft Lavender.
    ══════════════════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ── Color Palette (Stitch "Serene Intelligence" tokens) ────────── */
-  --color-background: #f9f9ff;
-  --color-surface: #f9f9ff;
-  --color-surface-bright: #f9f9ff;
+  /* ── Core Palette (Digital Sanctuary tokens) ─────────────────── */
+  --color-background: #F8FAFC;
+  --color-surface: #F8FAFC;
+  --color-surface-bright: #FFFFFF;
   --color-surface-dim: #d1daf4;
   --color-surface-variant: #d9e2fc;
   --color-surface-container: #e9edff;
@@ -19,6 +20,7 @@
   --color-surface-container-lowest: #ffffff;
   --color-surface-tint: #4d5c8e;
 
+  /* ── Primary: Muted Indigo ──────────────────────────────────── */
   --color-primary: #4d5c8e;
   --color-primary-container: #6675a8;
   --color-primary-fixed: #dbe1ff;
@@ -29,6 +31,7 @@
   --color-on-primary-fixed-variant: #354574;
   --color-inverse-primary: #b5c5fd;
 
+  /* ── Secondary: Soft Lavender ───────────────────────────────── */
   --color-secondary: #635a75;
   --color-secondary-container: #eaddfe;
   --color-secondary-fixed: #eaddfe;
@@ -38,6 +41,7 @@
   --color-on-secondary-fixed: #1f182f;
   --color-on-secondary-fixed-variant: #4b435c;
 
+  /* ── Tertiary: Cool Slate ───────────────────────────────────── */
   --color-tertiary: #545d68;
   --color-tertiary-container: #6c7581;
   --color-tertiary-fixed: #dae3f0;
@@ -47,21 +51,30 @@
   --color-on-tertiary-fixed: #131c25;
   --color-on-tertiary-fixed-variant: #3f4852;
 
+  /* ── Deep Navy (Sanctuary accent) ───────────────────────────── */
+  --color-navy: #172033;
+  --color-navy-light: #1e2d47;
+  --color-lavender: #A59AB8;
+  --color-lavender-light: #c4b8d6;
+
+  /* ── On-Surface ─────────────────────────────────────────────── */
   --color-on-background: #121b2e;
   --color-on-surface: #121b2e;
   --color-on-surface-variant: #45464f;
   --color-inverse-surface: #273044;
   --color-inverse-on-surface: #edf0ff;
 
+  /* ── Outline ────────────────────────────────────────────────── */
   --color-outline: #757680;
   --color-outline-variant: #c5c6d0;
 
+  /* ── Error ──────────────────────────────────────────────────── */
   --color-error: #ba1a1a;
   --color-error-container: #ffdad6;
   --color-on-error: #ffffff;
   --color-on-error-container: #93000a;
 
-  /* ── Semantic Status Badge Colors ─────────────────────────────── */
+  /* ── Semantic Risk Status ───────────────────────────────────── */
   --color-risk-low: #059669;
   --color-risk-low-bg: rgba(5, 150, 105, 0.1);
   --color-risk-moderate: #d97706;
@@ -69,11 +82,11 @@
   --color-risk-high: #c0564b;
   --color-risk-high-bg: rgba(192, 86, 75, 0.1);
 
-  /* ── Typography ───────────────────────────────────────────────── */
+  /* ── Typography ─────────────────────────────────────────────── */
   --font-sans: "Geist Sans", "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
 
-  /* ── Spacing Tokens ───────────────────────────────────────────── */
+  /* ── Spacing Tokens (8px grid) ──────────────────────────────── */
   --spacing-base: 8px;
   --spacing-container-mobile: 20px;
   --spacing-container-desktop: 80px;
@@ -82,33 +95,133 @@
   --spacing-stack-md: 24px;
   --spacing-stack-lg: 48px;
 
-  /* ── Box Shadows ──────────────────────────────────────────────── */
+  /* ── Box Shadows ────────────────────────────────────────────── */
   --shadow-ambient: 0px 4px 24px rgba(15, 23, 42, 0.04);
   --shadow-ambient-hover: 0px 8px 32px rgba(15, 23, 42, 0.08);
+  --shadow-sanctuary: 0px 4px 40px rgba(77, 92, 142, 0.06), 0px 1px 4px rgba(77, 92, 142, 0.04);
+  --shadow-sanctuary-hover: 0px 8px 48px rgba(77, 92, 142, 0.12), 0px 2px 8px rgba(77, 92, 142, 0.06);
+  --shadow-glow-primary: 0px 0px 32px rgba(77, 92, 142, 0.15);
+  --shadow-glow-lavender: 0px 0px 32px rgba(165, 154, 184, 0.15);
 }
 
-/* ── Glass Panel Utility ─────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLASS PANEL SYSTEM — Digital Sanctuary Materiality
+   ═══════════════════════════════════════════════════════════════════ */
+
 .glass-panel {
   background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid color-mix(in srgb, var(--color-outline-variant) 30%, transparent);
-  box-shadow: var(--shadow-ambient);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid color-mix(in srgb, var(--color-outline-variant) 25%, transparent);
+  box-shadow: var(--shadow-sanctuary);
+  transition: box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .glass-panel-hover:hover {
-  box-shadow: var(--shadow-ambient-hover);
-  transition: box-shadow 0.3s ease;
+  box-shadow: var(--shadow-sanctuary-hover);
+  border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  transform: translateY(-1px);
 }
 
-/* ── Gradient Background ─────────────────────────────────────────── */
+/* Elevated variant for primary action cards */
+.glass-panel-elevated {
+  background-color: color-mix(in srgb, var(--color-surface-bright) 90%, transparent);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 10%, transparent);
+  box-shadow: var(--shadow-sanctuary),
+              inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   GRADIENT BACKGROUNDS — Sanctuary Atmosphere
+   ═══════════════════════════════════════════════════════════════════ */
+
 .gradient-bg {
   background-image:
-    radial-gradient(circle at 0% 0%, rgba(102, 117, 168, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 100% 100%, rgba(165, 154, 184, 0.08) 0%, transparent 50%);
+    radial-gradient(ellipse at 0% 0%, rgba(102, 117, 168, 0.07) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 100%, rgba(165, 154, 184, 0.07) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(219, 225, 255, 0.04) 0%, transparent 70%);
 }
 
-/* ── Material Symbols Base ───────────────────────────────────────── */
+/* Sanctuary-specific gradient for therapy pages */
+.gradient-sanctuary {
+  background-image:
+    radial-gradient(ellipse at 20% 20%, rgba(77, 92, 142, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(165, 154, 184, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 0%, rgba(181, 197, 253, 0.04) 0%, transparent 60%);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   ANIMATIONS — Gentle Micro-interactions
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Floating ambient orb (for therapy pages) */
+@keyframes float-ambient {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+  25% { transform: translate(10px, -15px) scale(1.05); opacity: 0.6; }
+  50% { transform: translate(-5px, -25px) scale(1.02); opacity: 0.5; }
+  75% { transform: translate(-15px, -10px) scale(0.98); opacity: 0.45; }
+}
+
+.animate-float-ambient {
+  animation: float-ambient 20s ease-in-out infinite;
+}
+
+/* Breathing aura (for recording/active states) */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.15); opacity: 0.6; }
+}
+
+.animate-breathe {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+/* Gentle fade-in for page transitions */
+@keyframes sanctuary-fade-in {
+  0% { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-sanctuary-in {
+  animation: sanctuary-fade-in 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Staggered card entrance */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+/* Gentle shimmer for loading states */
+@keyframes sanctuary-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-sanctuary-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-container-low) 25%,
+    var(--color-surface-container-high) 50%,
+    var(--color-surface-container-low) 75%
+  );
+  background-size: 200% 100%;
+  animation: sanctuary-shimmer 2s ease-in-out infinite;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   MATERIAL SYMBOLS — Icon System
+   ═══════════════════════════════════════════════════════════════════ */
+
 .material-symbols-outlined {
   font-family: "Material Symbols Outlined";
   font-weight: normal;
@@ -127,20 +240,121 @@
   font-feature-settings: "liga";
 }
 
-/* ── Selection color ─────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════
+   SELECTION & SCROLLBAR — Premium Details
+   ═══════════════════════════════════════════════════════════════════ */
+
 ::selection {
   background-color: var(--color-primary-container);
   color: var(--color-on-primary-container);
 }
 
-/* ── CTA Smooth Scale Effects ────────────────────────────────────── */
-.cta-btn {
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease;
+/* Sanctuary scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--color-outline-variant) 40%, transparent);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--color-outline-variant) 70%, transparent);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   CTA & INTERACTIVE ELEMENTS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.cta-btn {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              background-color 0.2s ease;
+}
+
 .cta-btn:hover {
   transform: scale(1.04);
 }
+
 .cta-btn:active {
   transform: scale(0.97);
 }
 
+/* Sanctuary button — primary with glow */
+.btn-sanctuary {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-container));
+  color: var(--color-on-primary);
+  border: none;
+  box-shadow: var(--shadow-glow-primary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-sanctuary:hover {
+  box-shadow: 0px 0px 40px rgba(77, 92, 142, 0.25);
+  transform: translateY(-1px);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   THERAPY-SPECIFIC UTILITIES
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Chat message bubble */
+.chat-bubble-user {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-container));
+  color: var(--color-on-primary);
+  border-radius: 20px 20px 4px 20px;
+}
+
+.chat-bubble-assistant {
+  background-color: color-mix(in srgb, var(--color-surface-container-low) 95%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-outline-variant) 20%, transparent);
+  border-radius: 20px 20px 20px 4px;
+}
+
+/* Voice recording aura */
+.recording-aura {
+  position: relative;
+}
+
+.recording-aura::before {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(77, 92, 142, 0.15) 0%, transparent 70%);
+  animation: breathe 3s ease-in-out infinite;
+}
+
+/* Typing indicator dots */
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+.typing-dot:nth-child(1) { animation: typing-dot 1.4s ease-in-out infinite 0s; }
+.typing-dot:nth-child(2) { animation: typing-dot 1.4s ease-in-out infinite 0.2s; }
+.typing-dot:nth-child(3) { animation: typing-dot 1.4s ease-in-out infinite 0.4s; }
+
+/* Tool badge (for CBT technique display) */
+.tool-badge {
+  background: linear-gradient(135deg, rgba(77, 92, 142, 0.08), rgba(165, 154, 184, 0.08));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+
+/* Crisis banner */
+.crisis-banner {
+  background: linear-gradient(135deg, rgba(192, 86, 75, 0.08), rgba(192, 86, 75, 0.04));
+  border: 1px solid rgba(192, 86, 75, 0.2);
+  border-radius: 16px;
+}

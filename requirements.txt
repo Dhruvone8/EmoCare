@@ -42,10 +42,9 @@ matplotlib==3.10.3           # pinned: 3.9.x has no cp313-win64 wheel; prevents 
 seaborn>=0.13.0
 plotly>=5.18.0
 
-# ── API & Dashboard ──────────────────────────────────────────
+# ── API ───────────────────────────────────────────────────────
 fastapi>=0.104.0
 uvicorn>=0.24.0
-streamlit>=1.28.0
 requests>=2.31.0
 pydantic>=2.5.0
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
@@ -22,6 +23,9 @@ export const metadata: Metadata = {
   title: "EmoCare — Emotional Wellness Sanctuary",
   description:
     "AI-powered affective computing for early emotional insight and support. An intelligent system for early detection & support of mental health distress.",
+  other: {
+    "material-symbols": "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap",
+  },
 };
 
 export default function RootLayout({
@@ -32,9 +36,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
+        {/* Material Symbols font — loaded as stylesheet link */}
         <link
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
           rel="stylesheet"
+          key="material-symbols"
         />
       </head>
       <body className="bg-background text-on-surface font-sans antialiased min-h-screen gradient-bg flex flex-col relative overflow-x-hidden">
@@ -50,4 +56,3 @@ export default function RootLayout({
     </html>
   );
 }
-

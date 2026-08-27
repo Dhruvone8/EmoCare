@@ -118,3 +118,81 @@ class AssessmentResponse(BaseModel):
     plain_language_summary: str
     timestamp: str
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# THERAPY SESSION & CHAT SCHEMAS
+# ═══════════════════════════════════════════════════════════════════════
+
+class StartSessionRequest(BaseModel):
+    user_id: str = Field(..., min_length=1)
+    mode: str = Field(..., description="'chat' or 'voice'")
+    objective: Optional[str] = Field(None, description="Optional session objective or topic")
+
+
+class StartSessionResponse(BaseModel):
+    session_id: int
+    mode: str
+    started_at: str
+    prior_summaries: list[dict] = Field(
+        default_factory=list,
+        description="Most recent 1–3 session summaries for continuity context"
+    )
+
+
+class ChatMessageRequest(BaseModel):
+    session_id: int
+    user_id: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=10000)
+
+
+class ToolInvocation(BaseModel):
+    tool_name: str
+    tool_input: dict = Field(default_factory=dict)
+    tool_output: str = ""
+
+
+class ChatMessageResponse(BaseModel):
+    session_id: int
+    reply: str
+    risk_tier: str = Field(..., description="Risk tier of the user's message: Low | Moderate | High")
+    urgency_level: str = Field("STABLE", description="STABLE | WARNING | CRITICAL")
+    crisis_activated: bool = Field(False, description="True if crisis protocol was triggered")
+    tools_used: list[ToolInvocation] = Field(
+        default_factory=list,
+        description="Deterministic CBT/crisis tools invoked by the LLM for this turn"
+    )
+
+
+class EndSessionRequest(BaseModel):
+    session_id: int
+    user_id: str = Field(..., min_length=1)
+
+
+class SessionSummaryResponse(BaseModel):
+    session_id: int
+    summary_text: str
+    concerns: list[str] = Field(default_factory=list)
+    goals: list[str] = Field(default_factory=list)
+    techniques_used: list[str] = Field(default_factory=list)
+
+
+class UserSessionListResponse(BaseModel):
+    sessions: list[dict] = Field(default_factory=list)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VOICE THERAPY SCHEMAS
+# ═══════════════════════════════════════════════════════════════════════
+
+class VoiceTherapyResponse(BaseModel):
+    session_id: int
+    transcript: str = Field(..., description="Whisper-transcribed user speech")
+    reply_text: str = Field(..., description="LLM reply text (voice-optimized: no markdown)")
+    reply_audio_base64: Optional[str] = Field(
+        None, description="Base64-encoded TTS audio (ElevenLabs) or null if TTS unavailable"
+    )
+    risk_tier: str
+    urgency_level: str = "STABLE"
+    crisis_activated: bool = False
+    speech_emotion: Optional[str] = Field(None, description="Detected speech emotion from SER model")
+    tools_used: list[ToolInvocation] = Field(default_factory=list)

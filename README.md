@@ -20,6 +20,17 @@ EmoCare/
 │   ├── processed/                # final, model-ready datasets
 │   └── external/                 # label maps, lookup tables, reference files
 │
+├── backend/
+│   └── app/                     # FastAPI application
+│
+├── frontend/                    # Next.js application (sole frontend)
+│   └── src/
+│       ├── app/                 # App Router pages
+│       ├── components/          # Reusable UI components
+│       ├── context/             # React context providers
+│       ├── lib/                 # API helpers & utilities
+│       └── types/               # TypeScript type definitions
+│
 ├── notebooks/
 │   ├── 01_eda/                   # exploratory analysis, per dataset
 │   ├── 02_preprocessing/
@@ -35,8 +46,6 @@ EmoCare/
 │   │   ├── risk_classifier/
 │   │   └── fusion/
 │   ├── explainability/           # SHAP/LIME wrappers
-│   ├── api/                      # FastAPI app
-│   ├── dashboard/                # Streamlit app
 │   └── utils/
 │
 ├── models/                       # saved trained model artifacts (gitignored — too large for git)
@@ -48,7 +57,7 @@ EmoCare/
 ├── tests/                        # unit tests for src/
 ├── docker/
 │   ├── Dockerfile.api
-│   ├── Dockerfile.dashboard
+│   ├── Dockerfile.frontend
 │   └── docker-compose.yml
 ├── scripts/                      # one-off setup/download scripts
 ├── docs/                         # your feature list, dataset docs, report drafts
@@ -62,7 +71,7 @@ EmoCare/
 
 ## Setup & Quickstart
 
-1. **Install Dependencies**
+1. **Install Python Dependencies**
    ```bash
    pip install -r requirements.txt
    ```
@@ -74,11 +83,13 @@ EmoCare/
 
 3. **Run FastAPI Backend**
    ```bash
-   uvicorn src.api.main:app --reload
+   cd backend
+   uvicorn app.main:app --reload
    ```
 
-4. **Run frontend terminal**
-   ```
+4. **Run Next.js Frontend**
+   ```bash
    cd frontend
+   npm install
    npm run dev
    ```

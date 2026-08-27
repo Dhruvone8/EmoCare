@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { predictMultimodal } from "@/lib/api";
+import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
+import { predictMultimodal, getUserSessions } from "@/lib/api";
 import type { MultimodalResponse, BehavioralRequest } from "@/types/api";
 
 function translateOverallWellness(tier: string): { emoji: string; label: string; bg: string; border: string } {
@@ -27,6 +29,8 @@ function translateUrgency(urgency: string): string {
 }
 
 export default function InsightsPage() {
+  const { user } = useAuth();
+
   const [text, setText] = useState("");
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [recording, setRecording] = useState(false);
@@ -45,6 +49,38 @@ export default function InsightsPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<MultimodalResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /* ── Therapy Session History ─────────────────────────────────── */
+  type SessionEntry = {
+    id?: number;
+    session_id?: number;
+    user_id?: string;
+    mode: string;
+    started_at: string;
+    ended_at?: string | null;
+    message_count?: number;
+    objective?: string;
+    summary_text?: string;
+  };
+  const [sessions, setSessions] = useState<SessionEntry[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+
+  const userId =
+    user?.id || "guest_" + (typeof window !== "undefined" ? window.location.hostname : "anon");
+
+  useEffect(() => {
+    (async () => {
+      setSessionsLoading(true);
+      try {
+        const res = await getUserSessions(userId);
+        setSessions(res.sessions as SessionEntry[]);
+      } catch {
+        /* Session history unavailable — not critical */
+      } finally {
+        setSessionsLoading(false);
+      }
+    })();
+  }, [userId]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -273,6 +309,94 @@ export default function InsightsPage() {
           )}
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════
+          THERAPY JOURNEY SECTION
+          ═══════════════════════════════════════════════════════════ */}
+      <section className="mt-2">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-sans text-[22px] font-semibold text-on-surface tracking-tight flex items-center gap-2">
+              <span
+                className="material-symbols-outlined text-primary text-xl"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                timeline
+              </span>
+              Your Therapy Journey
+            </h2>
+            <p className="font-sans text-[14px] text-on-surface-variant mt-0.5">
+              Session history and progress over time
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/therapy/chat"
+              className="px-3 py-1.5 text-[12px] font-medium rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-all flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-sm">forum</span>
+              Chat
+            </Link>
+            <Link
+              href="/therapy/voice"
+              className="px-3 py-1.5 text-[12px] font-medium rounded-full bg-secondary/10 text-secondary hover:bg-secondary/20 transition-all flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-sm">headset_mic</span>
+              Voice
+            </Link>
+          </div>
+        </div>
+
+        {sessionsLoading ? (
+          <div className="glass-panel rounded-xl p-8 flex items-center justify-center gap-3">
+            <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            <span className="text-sm text-on-surface-variant">Loading therapy sessions...</span>
+          </div>
+        ) : sessions.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {sessions.slice(0, 9).map((session, index) => {
+              const sessionKey = session.session_id ?? session.id ?? `session-${index}-${session.started_at}`;
+              return <SessionCard key={sessionKey} session={session} />;
+            })}
+          </div>
+        ) : (
+          <div className="glass-panel rounded-xl p-8 flex flex-col items-center text-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <span
+                className="material-symbols-outlined text-primary text-3xl"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                spa
+              </span>
+            </div>
+            <div>
+              <div className="font-sans text-[18px] font-medium text-on-surface mb-1">
+                No sessions yet
+              </div>
+              <p className="font-sans text-[14px] text-on-surface-variant max-w-sm">
+                Start a therapy session to begin building your emotional
+                wellness journey. Choose chat or voice therapy to get started.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 mt-2">
+              <Link
+                href="/therapy/chat"
+                className="btn-sanctuary px-5 py-2.5 rounded-full text-sm font-medium flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-sm">forum</span>
+                Chat Therapy
+              </Link>
+              <Link
+                href="/therapy/voice"
+                className="px-5 py-2.5 rounded-full text-sm font-medium border border-primary/30 text-primary hover:bg-primary/5 transition-all flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-sm">headset_mic</span>
+                Voice Therapy
+              </Link>
+            </div>
+          </div>
+        )}
+      </section>
     </>
   );
 }
@@ -286,5 +410,90 @@ function HelplineCard({ name, number }: { name: string; number: string }) {
       <span className="font-sans text-[14px] font-medium text-rose-800">{name}</span>
       <span className="font-mono text-[14px] font-semibold text-rose-600">{number}</span>
     </a>
+  );
+}
+
+/* ── Session Card (Therapy Journey) ─────────────────────────────────── */
+
+function SessionCard({
+  session,
+}: {
+  session: {
+    id?: number;
+    session_id?: number;
+    mode: string;
+    started_at: string;
+    ended_at?: string | null;
+    message_count?: number;
+  };
+}) {
+  const isVoice = session.mode === "voice";
+  const startDate = new Date(session.started_at);
+  const endDate = session.ended_at ? new Date(session.ended_at) : null;
+
+  const durationMin = endDate
+    ? Math.round((endDate.getTime() - startDate.getTime()) / 60000)
+    : null;
+
+  return (
+    <div className="glass-panel rounded-xl p-4 flex flex-col gap-3 hover:border-primary/20 transition-all">
+      {/* Mode icon + date */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div
+            className={`w-8 h-8 rounded-full flex items-center justify-center ${
+              isVoice
+                ? "bg-secondary/10 text-secondary"
+                : "bg-primary/10 text-primary"
+            }`}
+          >
+            <span
+              className="material-symbols-outlined text-sm"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              {isVoice ? "headset_mic" : "forum"}
+            </span>
+          </div>
+          <div>
+            <div className="font-sans text-[13px] font-medium text-on-surface capitalize">
+              {session.mode} Session
+            </div>
+            <div className="font-sans text-[11px] text-on-surface-variant">
+              {startDate.toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </div>
+          </div>
+        </div>
+        {!endDate && (
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+            Active
+          </span>
+        )}
+      </div>
+
+      {/* Stats */}
+      <div className="flex items-center gap-4 text-[12px] text-on-surface-variant">
+        {durationMin !== null && (
+          <div className="flex items-center gap-1">
+            <span className="material-symbols-outlined text-[14px]">
+              schedule
+            </span>
+            <span>{durationMin} min</span>
+          </div>
+        )}
+        {session.message_count !== undefined && session.message_count > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="material-symbols-outlined text-[14px]">
+              chat_bubble
+            </span>
+            <span>{session.message_count} messages</span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

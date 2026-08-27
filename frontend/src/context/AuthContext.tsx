@@ -18,7 +18,26 @@ interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+/* Safe default for prerendering — used when AuthProvider is absent
+   (e.g. during Next.js 16 _global-error static generation) */
+const noop = () => {};
+const noopAsync = async () => ({ error: null as AuthError | null });
+
+const AUTH_DEFAULT: AuthContextType = {
+  user: null,
+  session: null,
+  loading: true,
+  isAuthModalOpen: false,
+  openAuthModal: noop,
+  closeAuthModal: noop,
+  authModalMode: "login",
+  setAuthModalMode: noop,
+  signIn: noopAsync,
+  signUp: noopAsync,
+  signOut: async () => {},
+};
+
+const AuthContext = createContext<AuthContextType>(AUTH_DEFAULT);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -108,9 +127,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
+  return useContext(AuthContext);
 }

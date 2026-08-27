@@ -13,13 +13,13 @@ services:
     env_file:
       - ../.env
 
-  dashboard:
+  frontend:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.dashboard
+      dockerfile: docker/Dockerfile.frontend
     ports:
-      - "8501:8501"
+      - "3000:3000"
     environment:
-      - API_BASE_URL=http://api:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - api

@@ -243,6 +243,30 @@ export default function DashboardPage() {
               subtitle="Share how you're feeling out loud"
             />
             <ActionCard
+              href="/therapy/chat"
+              icon="forum"
+              iconBg="bg-primary-fixed/40"
+              iconColor="text-primary"
+              hoverBg="group-hover:bg-primary"
+              hoverColor="group-hover:text-on-primary"
+              hoverArrow="group-hover:text-primary"
+              title="Chat Therapy"
+              subtitle="Guided conversation with CBT tools"
+              isNew
+            />
+            <ActionCard
+              href="/therapy/voice"
+              icon="headset_mic"
+              iconBg="bg-secondary-container/40"
+              iconColor="text-secondary"
+              hoverBg="group-hover:bg-secondary"
+              hoverColor="group-hover:text-on-secondary"
+              hoverArrow="group-hover:text-secondary"
+              title="Voice Therapy"
+              subtitle="Speak & listen — audio sanctuary"
+              isNew
+            />
+            <ActionCard
               href="/checkin"
               icon="mood"
               iconBg="bg-surface-variant/50"
@@ -356,6 +380,7 @@ function ActionCard({
   hoverArrow,
   title,
   subtitle,
+  isNew,
 }: {
   href: string;
   icon: string;
@@ -366,11 +391,12 @@ function ActionCard({
   hoverArrow: string;
   title: string;
   subtitle: string;
+  isNew?: boolean;
 }) {
   return (
     <Link
       href={href}
-      className="group flex items-center justify-between p-4 rounded-lg bg-surface border border-outline-variant/20 hover:border-primary/50 hover:bg-surface-container-low transition-all duration-300"
+      className="group flex items-center justify-between p-4 rounded-lg bg-surface border border-outline-variant/20 hover:border-primary/40 hover:bg-surface-container-low transition-all duration-300 relative"
     >
       <div className="flex items-center gap-4">
         <div
@@ -384,8 +410,13 @@ function ActionCard({
           </span>
         </div>
         <div>
-          <div className="font-sans text-[16px] font-medium text-on-surface leading-6">
+          <div className="font-sans text-[16px] font-medium text-on-surface leading-6 flex items-center gap-2">
             {title}
+            {isNew && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                New
+              </span>
+            )}
           </div>
           <div className="font-sans text-[14px] text-on-surface-variant leading-5">
             {subtitle}
