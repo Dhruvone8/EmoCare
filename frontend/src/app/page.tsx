@@ -58,15 +58,18 @@ export default function DashboardPage() {
   return (
     <>
       {/* ── Welcome Section ───────────────────────────────────────── */}
-      <section className="max-w-3xl">
-        <h1 className="font-sans text-[32px] md:text-[48px] font-semibold text-on-surface tracking-tight leading-tight mb-[var(--spacing-stack-sm)]">
-          {getGreeting()}, {userName}. 👋
+      <section className="max-w-4xl space-y-3">
+        <h1 className="font-sans text-3xl sm:text-4xl md:text-5xl font-bold text-on-surface tracking-tight leading-tight">
+          <span>{getGreeting()}, {userName}.</span>{" "}
+          <span className="inline-block transition-transform duration-300 hover:rotate-12 cursor-default select-none origin-bottom-right">
+            👋
+          </span>
           <br />
-          <span className="text-primary/70">
+          <span className="bg-gradient-to-r from-primary via-primary-container to-secondary bg-clip-text text-transparent">
             How are you feeling today?
           </span>
         </h1>
-        <p className="font-sans text-[18px] text-on-surface-variant max-w-2xl mt-4 leading-7">
+        <p className="font-sans text-base sm:text-lg text-on-surface-variant max-w-2xl leading-relaxed">
           This is your safe space. Take a moment to check in with yourself —
           write, talk, or calibrate your emotional baseline.
         </p>
@@ -74,16 +77,16 @@ export default function DashboardPage() {
 
       {/* ── Onboarding Banner (If no baseline test completed yet) ── */}
       {!baseline && (
-        <section className="glass-panel rounded-2xl p-6 md:p-8 bg-gradient-to-r from-primary/10 via-surface to-secondary-container/20 border-2 border-primary/30 shadow-lg relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6">
+        <section className="glass-panel rounded-2xl sm:rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-primary/10 via-surface-bright/70 to-secondary-container/20 border border-primary/25 shadow-sanctuary hover:shadow-sanctuary-hover transition-all duration-300 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="flex items-start gap-4 max-w-xl">
-            <div className="p-3.5 rounded-2xl bg-primary text-on-primary shadow-md shrink-0">
-              <span className="material-symbols-outlined text-3xl">assignment_turned_in</span>
+            <div className="p-3 sm:p-3.5 rounded-2xl bg-primary text-on-primary shadow-md shrink-0 flex items-center justify-center">
+              <span className="material-symbols-outlined text-2xl sm:text-3xl">assignment_turned_in</span>
             </div>
             <div>
               <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-primary/15 text-primary text-xs font-semibold uppercase tracking-wider mb-2">
                 <span>Step 1 • Onboarding</span>
               </div>
-              <h2 className="text-xl md:text-2xl font-semibold text-on-surface">
+              <h2 className="text-xl sm:text-2xl font-bold text-on-surface tracking-tight">
                 Calibrate Your Emotional Baseline
               </h2>
               <p className="text-sm text-on-surface-variant mt-1.5 leading-relaxed">
@@ -94,33 +97,36 @@ export default function DashboardPage() {
 
           <Link
             href="/assessment"
-            className="w-full md:w-auto px-7 py-3.5 rounded-full bg-primary hover:bg-primary/90 text-on-primary font-medium text-sm transition-all shadow-md hover:shadow-xl flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+            className="w-full md:w-auto px-6 sm:px-8 py-3.5 rounded-full bg-primary hover:bg-primary/90 text-on-primary font-semibold text-sm transition-all duration-200 shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 active:scale-95 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
           >
             <span>Start Self-Assessment</span>
-            <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            <span className="material-symbols-outlined text-base">arrow_forward</span>
           </Link>
         </section>
       )}
 
       {/* ── Main Grid ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-[var(--spacing-gutter)]">
-        {/* Left Column (7 cols) */}
-        <div className="col-span-1 md:col-span-7 flex flex-col gap-[var(--spacing-gutter)]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
+        {/* Left Column (7 cols on desktop) */}
+        <div className="col-span-1 lg:col-span-7 flex flex-col gap-6 sm:gap-8">
           {/* Wellness Pulse Card */}
-          <div className="glass-panel rounded-xl p-8 glass-panel-hover group relative overflow-hidden h-full min-h-[280px] flex flex-col justify-between bg-surface-container-lowest border-outline-variant/20">
+          <div className="glass-panel rounded-2xl p-6 sm:p-8 glass-panel-hover group relative overflow-hidden flex flex-col justify-between bg-surface-container-lowest border border-outline-variant/20 min-h-[290px]">
             {/* Subtle background glow */}
-            <div className="absolute -top-24 -right-24 w-64 h-64 bg-tertiary-fixed/30 rounded-full blur-3xl opacity-50 group-hover:opacity-80 transition-opacity duration-700" />
+            <div className="absolute -top-24 -right-24 w-64 h-64 bg-primary-fixed-dim/30 rounded-full blur-3xl opacity-40 group-hover:opacity-70 transition-opacity duration-700 pointer-events-none" />
+            
             <div className="relative z-10">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="font-sans text-[22px] font-medium text-on-surface leading-8">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="font-sans text-xl sm:text-[22px] font-semibold text-on-surface leading-snug">
                   Your Wellness Pulse
                 </h2>
-                <span
-                  className="material-symbols-outlined text-primary text-3xl"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  favorite
-                </span>
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform duration-300">
+                  <span
+                    className="material-symbols-outlined text-2xl"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    favorite
+                  </span>
+                </div>
               </div>
               <div className="flex items-center gap-4 mb-4">
                 <WellnessBadge
@@ -137,7 +143,7 @@ export default function DashboardPage() {
                   }
                 />
               </div>
-              <p className="font-sans text-[16px] text-on-surface-variant mt-2 max-w-md leading-7">
+              <p className="font-sans text-sm sm:text-base text-on-surface-variant mt-2 max-w-lg leading-relaxed">
                 {baseline ? (
                   <>
                     Baseline: <strong>{baseline.test_type.toUpperCase()}</strong> score of{" "}
@@ -147,15 +153,15 @@ export default function DashboardPage() {
                     ({baseline.severity_band}). Keep checking in to observe trends over time.
                   </>
                 ) : (
-                  "Take your initial self-assessment check-in to calibrate your real-time wellness pulse."
+                  "Take your initial self-assessment check-in to calibrate your real-time wellness pulse and track emotional trends."
                 )}
               </p>
             </div>
 
             {baseline && (
-              <div className="relative z-10 pt-4 border-t border-outline-variant/15 flex justify-between items-center text-xs text-on-surface-variant">
+              <div className="relative z-10 pt-4 mt-6 border-t border-outline-variant/15 flex justify-between items-center text-xs text-on-surface-variant">
                 <span>Last assessed: {new Date(baseline.date).toLocaleDateString()}</span>
-                <Link href="/assessment" className="text-primary font-medium hover:underline flex items-center gap-1">
+                <Link href="/assessment" className="text-primary font-semibold hover:underline flex items-center gap-1 transition-colors">
                   <span>Retake test</span>
                   <span className="material-symbols-outlined text-xs">refresh</span>
                 </Link>
@@ -164,7 +170,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Daily Snapshot Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--spacing-gutter)]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
             <SnapshotCard
               icon="psychology"
               label="Baseline Screener"
@@ -202,20 +208,20 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Right Column (5 cols) */}
-        <div className="col-span-1 md:col-span-5 flex flex-col gap-[var(--spacing-gutter)]">
+        {/* Right Column (5 cols on desktop) */}
+        <div className="col-span-1 lg:col-span-5 flex flex-col gap-6 sm:gap-8">
           {/* What would you like to do? */}
-          <div className="glass-panel rounded-xl p-6 flex flex-col gap-4 bg-surface-container-lowest">
-            <h3 className="font-sans text-[20px] font-medium text-on-surface mb-1 leading-8">
+          <div className="glass-panel rounded-2xl p-5 sm:p-6 flex flex-col gap-3.5 bg-surface-container-lowest border border-outline-variant/20 shadow-sanctuary">
+            <h3 className="font-sans text-lg sm:text-xl font-semibold text-on-surface mb-1">
               What would you like to do?
             </h3>
             <ActionCard
               href="/assessment"
               icon="assignment"
-              iconBg="bg-primary-container/20"
+              iconBg="bg-primary/10"
               iconColor="text-primary"
               hoverBg="group-hover:bg-primary"
-              hoverColor="group-hover:text-on-primary"
+              hoverColor="group-hover:text-white"
               hoverArrow="group-hover:text-primary"
               title="Self-Assessment (PHQ-9 / GAD-7)"
               subtitle="Calibrate baseline depression/anxiety"
@@ -223,10 +229,10 @@ export default function DashboardPage() {
             <ActionCard
               href="/journal"
               icon="edit_note"
-              iconBg="bg-secondary-container/30"
+              iconBg="bg-secondary/10"
               iconColor="text-secondary"
               hoverBg="group-hover:bg-secondary"
-              hoverColor="group-hover:text-on-secondary"
+              hoverColor="group-hover:text-white"
               hoverArrow="group-hover:text-secondary"
               title="Write in your journal"
               subtitle="Express your thoughts freely"
@@ -234,10 +240,10 @@ export default function DashboardPage() {
             <ActionCard
               href="/voice"
               icon="mic"
-              iconBg="bg-tertiary-fixed/50"
+              iconBg="bg-tertiary-container/30"
               iconColor="text-tertiary"
               hoverBg="group-hover:bg-tertiary"
-              hoverColor="group-hover:text-on-tertiary"
+              hoverColor="group-hover:text-white"
               hoverArrow="group-hover:text-tertiary"
               title="Talk it out"
               subtitle="Share how you're feeling out loud"
@@ -245,10 +251,10 @@ export default function DashboardPage() {
             <ActionCard
               href="/therapy/chat"
               icon="forum"
-              iconBg="bg-primary-fixed/40"
+              iconBg="bg-primary/10"
               iconColor="text-primary"
               hoverBg="group-hover:bg-primary"
-              hoverColor="group-hover:text-on-primary"
+              hoverColor="group-hover:text-white"
               hoverArrow="group-hover:text-primary"
               title="Chat Therapy"
               subtitle="Guided conversation with CBT tools"
@@ -257,10 +263,10 @@ export default function DashboardPage() {
             <ActionCard
               href="/therapy/voice"
               icon="headset_mic"
-              iconBg="bg-secondary-container/40"
+              iconBg="bg-secondary/15"
               iconColor="text-secondary"
               hoverBg="group-hover:bg-secondary"
-              hoverColor="group-hover:text-on-secondary"
+              hoverColor="group-hover:text-white"
               hoverArrow="group-hover:text-secondary"
               title="Voice Therapy"
               subtitle="Speak & listen — audio sanctuary"
@@ -269,38 +275,37 @@ export default function DashboardPage() {
             <ActionCard
               href="/checkin"
               icon="mood"
-              iconBg="bg-surface-variant/50"
+              iconBg="bg-surface-variant/70"
               iconColor="text-on-surface-variant"
               hoverBg="group-hover:bg-primary"
-              hoverColor="group-hover:text-on-primary"
+              hoverColor="group-hover:text-white"
               hoverArrow="group-hover:text-primary"
               title="Daily habits check-in"
               subtitle="Sleep, mood, and activity snapshot"
             />
           </div>
 
-
           {/* Supportive Card */}
-          <div className="glass-panel rounded-xl overflow-hidden group relative min-h-[200px] flex items-end">
+          <div className="glass-panel rounded-2xl overflow-hidden group relative min-h-[220px] flex items-end shadow-sanctuary border border-outline-variant/20">
             <div className="absolute inset-0 z-0">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 alt="Serene background"
-                className="w-full h-full object-cover opacity-60 mix-blend-luminosity group-hover:scale-105 transition-transform duration-1000 ease-out"
+                className="w-full h-full object-cover opacity-50 mix-blend-luminosity group-hover:scale-105 transition-transform duration-1000 ease-out"
                 src="https://lh3.googleusercontent.com/aida-public/AB6AXuDNK5o4Oim2WxpuRgUwVPtHIfniJ2UoAwq0zLt1IfnwVI_lHshXTSgL3jhXMjFGMaQfV-a7kx93Yv3v5x4fteWiaPnerldgW1IhDCR5c0E6FfzsA-c-o008UIP4MPYKnYN6iy6xdFaZZiRgtAl37PID9ZEZpcvpwuTaXz2n43D7wNtlwiDUL9ZSSFZ6qLng80ufkA5DbXK-ue1LV3gWbY0rp-3iEYnJK6ew1ea3g-snM_nLywrEtnD9tA"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-surface-container-highest/90 via-surface/60 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-surface-container-highest/95 via-surface/75 to-transparent" />
             </div>
             <div className="relative z-10 p-6 w-full backdrop-blur-[2px]">
-              <div className="font-sans text-[12px] font-medium text-primary tracking-wider uppercase mb-2 leading-4">
+              <div className="font-sans text-[11px] font-bold text-primary tracking-wider uppercase mb-1.5">
                 Take a moment
               </div>
-              <h3 className="font-sans text-[22px] font-medium text-on-surface mb-3 leading-snug">
+              <h3 className="font-sans text-xl font-bold text-on-surface mb-3 leading-snug">
                 A small pause can help.
                 <br />
                 Try a 60-second breathing exercise.
               </h3>
-              <button className="px-6 py-2 bg-primary text-on-primary rounded-full font-sans text-[13px] font-medium hover:bg-surface-tint transition-colors w-max flex items-center gap-2">
+              <button className="px-5 py-2 bg-primary text-on-primary rounded-full font-sans text-xs font-semibold hover:bg-primary/90 transition-all duration-200 shadow-xs hover:shadow-md hover:-translate-y-0.5 active:scale-95 w-max flex items-center gap-2 cursor-pointer">
                 <span>Begin</span>
                 <span className="material-symbols-outlined text-sm">
                   play_arrow
@@ -320,7 +325,7 @@ function WellnessBadge({ status }: { status: "good" | "mixed" | "tough" | "loadi
     return (
       <div className="flex items-center gap-3">
         <div className="w-4 h-4 rounded-full bg-outline animate-pulse" />
-        <span className="font-sans text-[16px] text-on-surface-variant">Checking...</span>
+        <span className="font-sans text-sm text-on-surface-variant">Checking...</span>
       </div>
     );
   }
@@ -332,9 +337,9 @@ function WellnessBadge({ status }: { status: "good" | "mixed" | "tough" | "loadi
   }[status];
 
   return (
-    <div className={`flex items-center gap-3 px-5 py-2.5 rounded-full ${config.bg} border ${config.border}`}>
-      <span className="text-2xl">{config.emoji}</span>
-      <span className="font-sans text-[18px] font-medium text-on-surface">{config.text}</span>
+    <div className={`flex items-center gap-2.5 px-4 py-2 rounded-full ${config.bg} border ${config.border} transition-all duration-300 shadow-xs`}>
+      <span className="text-xl sm:text-2xl">{config.emoji}</span>
+      <span className="font-sans text-sm sm:text-base font-semibold text-on-surface">{config.text}</span>
     </div>
   );
 }
@@ -352,17 +357,19 @@ function SnapshotCard({
   hint: string;
 }) {
   return (
-    <div className="glass-panel rounded-lg p-5 flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-on-surface-variant mb-1">
-        <span className="material-symbols-outlined text-sm">{icon}</span>
-        <span className="font-sans text-[12px] font-medium uppercase tracking-wider text-xs">
+    <div className="glass-panel rounded-xl p-5 flex flex-col gap-2 bg-surface-container-lowest border border-outline-variant/20 hover:border-primary/30 hover:shadow-sanctuary-hover hover:-translate-y-0.5 transition-all duration-300 group">
+      <div className="flex items-center gap-2 text-on-surface-variant">
+        <div className="w-7 h-7 rounded-lg bg-surface-variant/40 group-hover:bg-primary/10 group-hover:text-primary transition-colors flex items-center justify-center">
+          <span className="material-symbols-outlined text-base">{icon}</span>
+        </div>
+        <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-on-surface-variant/80">
           {label}
         </span>
       </div>
-      <div className="font-sans text-[16px] font-medium text-on-surface leading-6">
+      <div className="font-sans text-base font-semibold text-on-surface mt-1">
         {value}
       </div>
-      <div className="font-sans text-[13px] text-on-surface-variant leading-5">
+      <div className="font-sans text-xs text-on-surface-variant/85 leading-normal">
         {hint}
       </div>
     </div>
@@ -396,35 +403,35 @@ function ActionCard({
   return (
     <Link
       href={href}
-      className="group flex items-center justify-between p-4 rounded-lg bg-surface border border-outline-variant/20 hover:border-primary/40 hover:bg-surface-container-low transition-all duration-300 relative"
+      className="group flex items-center justify-between p-3.5 sm:p-4 rounded-xl bg-surface border border-outline-variant/20 hover:border-primary/35 hover:bg-surface-container-low/60 hover:shadow-xs hover:-translate-y-0.5 transition-all duration-200 relative cursor-pointer"
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3.5">
         <div
-          className={`w-10 h-10 rounded-full ${iconBg} flex items-center justify-center ${iconColor} ${hoverBg} ${hoverColor} transition-colors`}
+          className={`w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center ${iconColor} ${hoverBg} ${hoverColor} group-hover:scale-105 transition-all duration-200 shrink-0`}
         >
           <span
-            className="material-symbols-outlined"
+            className="material-symbols-outlined text-xl"
             style={{ fontVariationSettings: "'FILL' 1" }}
           >
             {icon}
           </span>
         </div>
         <div>
-          <div className="font-sans text-[16px] font-medium text-on-surface leading-6 flex items-center gap-2">
+          <div className="font-sans text-sm sm:text-base font-semibold text-on-surface flex items-center gap-2 group-hover:text-primary transition-colors duration-200">
             {title}
             {isNew && (
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 px-2 py-0.5 rounded-full">
                 New
               </span>
             )}
           </div>
-          <div className="font-sans text-[14px] text-on-surface-variant leading-5">
+          <div className="font-sans text-xs sm:text-sm text-on-surface-variant">
             {subtitle}
           </div>
         </div>
       </div>
       <span
-        className={`material-symbols-outlined text-outline-variant ${hoverArrow} group-hover:translate-x-1 transition-all`}
+        className={`material-symbols-outlined text-outline-variant ${hoverArrow} group-hover:translate-x-1 group-hover:text-primary transition-all duration-200 shrink-0 ml-2`}
       >
         arrow_forward
       </span>

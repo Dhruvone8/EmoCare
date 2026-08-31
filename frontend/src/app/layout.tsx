@@ -23,9 +23,6 @@ export const metadata: Metadata = {
   title: "EmoCare — Emotional Wellness Sanctuary",
   description:
     "AI-powered affective computing for early emotional insight and support. An intelligent system for early detection & support of mental health distress.",
-  other: {
-    "material-symbols": "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap",
-  },
 };
 
 export default function RootLayout({
@@ -36,17 +33,15 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
-        {/* Material Symbols font — loaded as stylesheet link */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
           rel="stylesheet"
-          key="material-symbols"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         />
       </head>
       <body className="bg-background text-on-surface font-sans antialiased min-h-screen gradient-bg flex flex-col relative overflow-x-hidden">
         <AuthProvider>
           <Navigation />
-          <main className="flex-grow w-full max-w-[1200px] mx-auto px-[var(--spacing-container-mobile)] md:px-[var(--spacing-container-desktop)] py-[var(--spacing-stack-lg)] flex flex-col gap-[var(--spacing-stack-lg)] z-10 relative">
+          <main className="flex-grow w-full max-w-[1360px] mx-auto px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 py-6 sm:py-8 md:py-10 flex flex-col gap-6 sm:gap-8 md:gap-10 z-10 relative">
             {children}
           </main>
           <Footer />

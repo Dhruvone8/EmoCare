@@ -34,26 +34,26 @@ export function Navigation() {
     "User";
 
   return (
-    <header className="sticky top-0 z-50 w-full">
+    <header className="sticky top-0 z-50 w-full transition-all duration-300">
       {/* Glass navigation bar */}
-      <div className="bg-surface/80 backdrop-blur-xl border-b border-outline-variant/20 shadow-[0_2px_16px_rgba(15,23,42,0.04)]">
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div className="bg-surface/85 backdrop-blur-xl border-b border-outline-variant/20 shadow-[0_2px_20px_rgba(15,23,42,0.04)]">
+        <div className="w-full px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 h-16 flex items-center justify-between gap-4">
           
-          {/* Brand Logo */}
+          {/* Brand Logo - Extreme Left Boundary */}
           <Link
             href="/"
-            className="flex items-center gap-2.5 group shrink-0 select-none"
+            className="flex items-center gap-2.5 group shrink-0 select-none transition-transform duration-200 active:scale-95"
           >
-            <span className="text-2xl transition-transform duration-300 group-hover:scale-110 drop-shadow-xs">
+            <span className="text-2xl transition-transform duration-300 ease-out group-hover:scale-110 drop-shadow-xs">
               🌱
             </span>
-            <span className="font-sans text-xl sm:text-[22px] font-bold tracking-tight text-on-surface group-hover:text-primary transition-colors">
+            <span className="font-sans text-xl sm:text-[22px] font-bold tracking-tight text-on-surface group-hover:text-primary transition-colors duration-200">
               EmoCare
             </span>
           </Link>
 
-          {/* Navigation Links (Desktop) */}
-          <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 shrink-0">
+          {/* Navigation Links (Desktop) - Centered */}
+          <nav className="hidden lg:flex items-center justify-center gap-1 xl:gap-1.5 flex-1 px-4">
             {NAV_ITEMS.map((item) => {
               const isActive =
                 item.href === "/"
@@ -64,14 +64,14 @@ export function Navigation() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`relative font-sans text-[13px] font-medium tracking-normal px-3 py-1.5 rounded-full transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 select-none ${
+                  className={`relative font-sans text-[13px] font-medium tracking-normal px-3.5 py-1.5 rounded-full transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 select-none ${
                     isActive
                       ? "text-primary bg-primary/10 font-semibold shadow-xs"
-                      : "text-on-surface-variant/85 hover:text-primary hover:bg-surface-variant/40"
+                      : "text-on-surface-variant/80 hover:text-primary hover:bg-surface-variant/50 hover:shadow-xs active:scale-95"
                   }`}
                 >
                   <span
-                    className="material-symbols-outlined text-[17px] leading-none shrink-0"
+                    className="material-symbols-outlined text-[17px] leading-none shrink-0 transition-transform duration-200 group-hover:scale-105"
                     style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}
                   >
                     {item.icon}
@@ -88,8 +88,8 @@ export function Navigation() {
             })}
           </nav>
 
-          {/* Right Section: Auth & Mobile Menu Button */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          {/* Right Section: Auth & Mobile Menu Button - Extreme Right Boundary */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Auth Controls */}
             {loading ? (
               <div className="w-8 h-8 rounded-full bg-surface-variant/40 animate-pulse" />
@@ -97,12 +97,12 @@ export function Navigation() {
               <div className="relative">
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  className="flex items-center gap-2 py-1.5 px-3 rounded-full bg-primary/8 hover:bg-primary/15 text-primary border border-primary/15 transition-all cursor-pointer text-xs font-semibold select-none"
+                  className="flex items-center gap-2 py-1.5 px-3.5 rounded-full bg-primary/8 hover:bg-primary/15 text-primary border border-primary/15 transition-all duration-200 hover:shadow-xs active:scale-95 cursor-pointer text-xs font-semibold select-none"
                   aria-label="User menu"
                 >
                   <span className="material-symbols-outlined text-lg leading-none">account_circle</span>
                   <span className="max-w-[110px] truncate hidden sm:inline">{displayName}</span>
-                  <span className="material-symbols-outlined text-sm leading-none">
+                  <span className="material-symbols-outlined text-sm leading-none transition-transform duration-200">
                     {dropdownOpen ? "expand_less" : "expand_more"}
                   </span>
                 </button>
@@ -123,14 +123,14 @@ export function Navigation() {
                     </div>
                     <Link
                       href="/insights"
-                      className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium text-on-surface hover:text-primary hover:bg-surface-variant/40 transition-colors"
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium text-on-surface hover:text-primary hover:bg-surface-variant/40 transition-colors duration-150"
                     >
                       <span className="material-symbols-outlined text-base">insights</span>
                       <span>My Insights & History</span>
                     </Link>
                     <button
                       onClick={() => signOut()}
-                      className="w-full text-left flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium text-error hover:bg-error/10 transition-colors cursor-pointer"
+                      className="w-full text-left flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium text-error hover:bg-error/10 transition-colors duration-150 cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-base">logout</span>
                       <span>Sign Out</span>
@@ -139,16 +139,16 @@ export function Navigation() {
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 sm:gap-2.5">
                 <button
                   onClick={() => openAuthModal("login")}
-                  className="text-xs sm:text-[13px] font-semibold text-on-surface-variant hover:text-primary px-3 sm:px-3.5 py-1.5 rounded-full hover:bg-surface-variant/40 transition-colors cursor-pointer whitespace-nowrap"
+                  className="text-xs sm:text-[13px] font-semibold text-on-surface-variant hover:text-primary px-3.5 sm:px-4 py-1.5 rounded-full hover:bg-surface-variant/50 transition-all duration-200 active:scale-95 cursor-pointer whitespace-nowrap"
                 >
                   Sign In
                 </button>
                 <button
                   onClick={() => openAuthModal("signup")}
-                  className="text-xs sm:text-[13px] font-semibold text-white bg-primary hover:bg-primary/90 px-3.5 sm:px-4 py-1.5 rounded-full shadow-xs hover:shadow-sm transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                  className="text-xs sm:text-[13px] font-semibold text-white bg-primary hover:bg-primary/90 px-4 sm:px-5 py-1.5 rounded-full shadow-xs hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-95 transition-all duration-200 cursor-pointer whitespace-nowrap"
                 >
                   Get Started
                 </button>
@@ -158,7 +158,7 @@ export function Navigation() {
             {/* Mobile hamburger menu toggle */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-full hover:bg-surface-variant/40 transition-colors text-on-surface-variant focus:outline-none"
+              className="lg:hidden p-2 rounded-full hover:bg-surface-variant/40 transition-colors duration-200 text-on-surface-variant focus:outline-none cursor-pointer"
               aria-label="Toggle navigation"
             >
               <span className="material-symbols-outlined text-2xl leading-none">
@@ -183,10 +183,10 @@ export function Navigation() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                className={`flex items-center justify-between px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
                   isActive
-                    ? "text-primary bg-primary/10 font-semibold"
-                    : "text-on-surface-variant hover:text-primary hover:bg-surface-variant/30"
+                    ? "text-primary bg-primary/10 font-semibold shadow-xs"
+                    : "text-on-surface-variant hover:text-primary hover:bg-surface-variant/30 active:scale-[0.99]"
                 }`}
               >
                 <div className="flex items-center gap-3">
