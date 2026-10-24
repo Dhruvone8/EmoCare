@@ -106,6 +106,15 @@ export interface AssessmentSubmissionRequest {
   user_id: string;
   test_type: "phq9" | "gad7";
   responses: number[];
+  follow_up_data?: Record<string, unknown>;
+  safety_disclosure?: Record<string, unknown>;
+}
+
+export interface SymptomDomainItem {
+  item_number: number;
+  question: string;
+  score: number;
+  frequency_label: string;
 }
 
 export interface AssessmentResponse {
@@ -119,6 +128,60 @@ export interface AssessmentResponse {
   risk_tier: "Low" | "Moderate" | "High";
   plain_language_summary: string;
   timestamp: string;
+  safety_alert?: boolean;
+  safety_details?: {
+    safety_alert: boolean;
+    q9_score?: number;
+    active_emergency?: boolean;
+    urgency_level?: string;
+    reason?: string | null;
+    crisis_resources?: string[];
+    safety_notice?: string | null;
+  };
+  symptom_breakdown?: {
+    domains: Record<
+      string,
+      { label: string; score: number; max: number; items: number[]; summary?: string; endorsed?: boolean }
+    >;
+    reported_count: number;
+    unreported_count: number;
+    reported_items: SymptomDomainItem[];
+    unreported_items: SymptomDomainItem[];
+  };
+  follow_up_summary?: {
+    completed: boolean;
+    functional_difficulty: string;
+    impact_areas: string[];
+    duration: string;
+    trajectory: string;
+    prior_history: string;
+    elevation_screen_endorsed: boolean;
+    elevation_screen_note?: string | null;
+    life_factors: string[];
+    coping_goals: string[];
+  };
+  recommended_steps?: string[];
+  clinical_disclaimer?: string;
+}
+
+export interface AssessmentHistoryItem {
+  id?: number | null;
+  user_id: string;
+  test_type: string;
+  total_score: number;
+  max_score: number;
+  severity_band: string;
+  risk_tier: string;
+  safety_flag: boolean;
+  q9_score?: number;
+  timestamp: string;
+  llm_summary?: string;
+}
+
+export interface AssessmentHistoryResponse {
+  user_id: string;
+  history: AssessmentHistoryItem[];
+  count: number;
 }
 
 // ── Multimodal Request (used by the API client) ──────────────────────
@@ -144,6 +207,9 @@ export interface StartSessionResponse {
   session_id: number;
   mode: string;
   started_at: string;
+  current_stage?: string;
+  stage_label?: string;
+  welcome_message?: string;
   prior_summaries: Array<{
     summary_text?: string;
     concerns?: string[];
@@ -163,6 +229,8 @@ export interface SessionSummaryResponse {
   concerns: string[];
   goals: string[];
   techniques_used: string[];
+  key_insights?: string[];
+  action_steps?: string[];
 }
 
 export interface UserSessionListResponse {
@@ -198,6 +266,9 @@ export interface ChatMessageResponse {
   risk_tier: "Low" | "Moderate" | "High";
   urgency_level: "STABLE" | "WARNING" | "CRITICAL";
   crisis_activated: boolean;
+  current_stage?: string;
+  stage_label?: string;
+  main_concern?: string | null;
   tools_used: ToolInvocation[];
 }
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { healthCheck } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { BreathingModal } from "@/components/BreathingModal";
 import type { HealthResponse } from "@/types/api";
 
 interface BaselineAssessment {
@@ -26,25 +27,26 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [baseline, setBaseline] = useState<BaselineAssessment | null>(null);
+  const [baseline] = useState<BaselineAssessment | null>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("emocare_last_assessment");
+      if (stored) {
+        try {
+          return JSON.parse(stored);
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
+  const [isBreathingModalOpen, setIsBreathingModalOpen] = useState(false);
 
   useEffect(() => {
     healthCheck()
       .then(setHealth)
       .catch(() => setHealth(null))
       .finally(() => setLoading(false));
-
-    // Load last self-assessment attempt
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("emocare_last_assessment");
-      if (stored) {
-        try {
-          setBaseline(JSON.parse(stored));
-        } catch {
-          // ignore parsing error
-        }
-      }
-    }
   }, []);
 
   const systemReady =
@@ -305,7 +307,10 @@ export default function DashboardPage() {
                 <br />
                 Try a 60-second breathing exercise.
               </h3>
-              <button className="px-5 py-2 bg-primary text-on-primary rounded-full font-sans text-xs font-semibold hover:bg-primary/90 transition-all duration-200 shadow-xs hover:shadow-md hover:-translate-y-0.5 active:scale-95 w-max flex items-center gap-2 cursor-pointer">
+              <button
+                onClick={() => setIsBreathingModalOpen(true)}
+                className="px-5 py-2 bg-primary text-on-primary rounded-full font-sans text-xs font-semibold hover:bg-primary/90 transition-all duration-200 shadow-xs hover:shadow-md hover:-translate-y-0.5 active:scale-95 w-max flex items-center gap-2 cursor-pointer"
+              >
                 <span>Begin</span>
                 <span className="material-symbols-outlined text-sm">
                   play_arrow
@@ -315,6 +320,12 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Guided Breathing Yoga Modal ─────────────────────────────── */}
+      <BreathingModal
+        isOpen={isBreathingModalOpen}
+        onClose={() => setIsBreathingModalOpen(false)}
+      />
     </>
   );
 }

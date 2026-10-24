@@ -20,6 +20,7 @@ import type {
   MultimodalRequest,
   AssessmentSubmissionRequest,
   AssessmentResponse,
+  AssessmentHistoryResponse,
   StartSessionRequest,
   StartSessionResponse,
   ChatMessageRequest,
@@ -157,6 +158,15 @@ export async function submitAssessment(
   });
 }
 
+export async function getAssessmentHistory(
+  userId: string,
+  limit: number = 20
+): Promise<AssessmentHistoryResponse> {
+  return apiFetch<AssessmentHistoryResponse>(
+    `/api/assessment/history/${encodeURIComponent(userId)}?limit=${limit}`
+  );
+}
+
 export { ApiError };
 
 
@@ -214,6 +224,28 @@ export async function sendChatMessage(
 
 // ── Voice Therapy ────────────────────────────────────────────────────
 
+export interface VoiceGreetingResponse {
+  session_id: number;
+  greeting_text: string;
+  audio_base64: string | null;
+}
+
+export async function getVoiceGreeting(
+  sessionId: number,
+  userId: string,
+  timeOfDay?: string
+): Promise<VoiceGreetingResponse> {
+  return apiFetch<VoiceGreetingResponse>("/api/voice-therapy/greeting", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      user_id: userId,
+      time_of_day: timeOfDay,
+    }),
+  });
+}
+
 export async function sendVoiceTherapy(
   sessionId: number,
   userId: string,
@@ -222,7 +254,14 @@ export async function sendVoiceTherapy(
   const formData = new FormData();
   formData.append("session_id", String(sessionId));
   formData.append("user_id", userId);
-  formData.append("audio", audioBlob, "voice_recording.wav");
+
+  const ext = audioBlob.type.includes("wav")
+    ? "wav"
+    : audioBlob.type.includes("mp4")
+    ? "mp4"
+    : "webm";
+
+  formData.append("audio", audioBlob, `voice_recording.${ext}`);
 
   return apiFetch<VoiceTherapyResponse>("/api/voice-therapy/interact", {
     method: "POST",
