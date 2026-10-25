@@ -21,6 +21,7 @@ Endpoints:
 """
 import os
 import logging
+from typing import Optional
 from contextlib import asynccontextmanager
 
 # Auto-load .env from backend/ or root
@@ -39,6 +40,7 @@ except ImportError:
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 
 from .model_loader import models
@@ -52,6 +54,8 @@ from .schemas import (
     MultimodalResponse,
     AssessmentSubmissionRequest,
     AssessmentResponse,
+    AssessmentHistoryResponse,
+    AssessmentHistoryItem,
     StartSessionRequest,
     StartSessionResponse,
     ChatMessageRequest,
@@ -62,17 +66,30 @@ from .schemas import (
     VoiceTherapyResponse,
 )
 from .inference import predict_text, predict_speech, predict_behavioral, predict_multimodal
-from .assessment import process_assessment, PHQ9_QUESTIONS, GAD7_QUESTIONS, RESPONSE_SCALE
+from .assessment import (
+    process_assessment,
+    process_assessment_async,
+    PHQ9_QUESTIONS,
+    GAD7_QUESTIONS,
+    RESPONSE_SCALE,
+    PHQ9_TIMEFRAME,
+    GAD7_TIMEFRAME,
+    FUNCTIONAL_DIFFICULTY_QUESTION,
+    FUNCTIONAL_DIFFICULTY_OPTIONS,
+    CLINICAL_DISCLAIMER,
+)
 from .db import (
     init_db,
     create_therapy_session,
     end_therapy_session,
+    save_therapy_message,
     get_session_messages,
     get_recent_session_summaries,
     get_all_user_sessions,
+    get_user_assessment_history,
 )
 from .therapy import process_chat_turn, generate_session_summary
-from .engine.voice_therapy import process_voice_turn
+from .engine.voice_therapy import process_voice_turn, generate_voice_greeting
 
 
 # ── Logging ────────────────────────────────────────────────────────────
@@ -89,11 +106,17 @@ MODELS_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."
 # ── Lifespan: load models & init DB on startup ────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+    from .engine.http_pool import warmup_connections, close_shared_client
+
     logger.info(f"Loading models from: {MODELS_ROOT}")
     models.load_all(MODELS_ROOT)
     init_db()
+    # Pre-warm connection pool in background for instant first voice turn
+    asyncio.create_task(warmup_connections())
     logger.info("EmoCare backend ready.")
     yield
+    await close_shared_client()
     logger.info("EmoCare backend shutting down.")
 
 
@@ -249,24 +272,30 @@ async def api_predict_multimodal(
 @app.get("/api/assessment/questions/{test_type}")
 async def get_assessment_questions(test_type: str):
     """
-    Get questionnaire items and scoring scales for PHQ-9 or GAD-7.
+    Get validated questionnaire items, timeframes, response scales, and clinical instructions.
     """
     test_type_clean = test_type.lower().strip().replace("-", "")
     if test_type_clean == "phq9":
         return {
             "test_type": "phq9",
             "title": "PHQ-9 (Depression Screening)",
-            "timeframe": "Over the last 2 weeks, how often have you been bothered by any of the following problems?",
+            "timeframe": PHQ9_TIMEFRAME,
             "scale": RESPONSE_SCALE,
             "questions": PHQ9_QUESTIONS,
+            "functional_question": FUNCTIONAL_DIFFICULTY_QUESTION,
+            "functional_options": FUNCTIONAL_DIFFICULTY_OPTIONS,
+            "disclaimer": CLINICAL_DISCLAIMER,
         }
     elif test_type_clean == "gad7":
         return {
             "test_type": "gad7",
             "title": "GAD-7 (Anxiety Screening)",
-            "timeframe": "Over the last 2 weeks, how often have you been bothered by the following problems?",
+            "timeframe": GAD7_TIMEFRAME,
             "scale": RESPONSE_SCALE,
             "questions": GAD7_QUESTIONS,
+            "functional_question": FUNCTIONAL_DIFFICULTY_QUESTION,
+            "functional_options": FUNCTIONAL_DIFFICULTY_OPTIONS,
+            "disclaimer": CLINICAL_DISCLAIMER,
         }
     else:
         raise HTTPException(
@@ -279,13 +308,16 @@ async def get_assessment_questions(test_type: str):
 async def submit_assessment(request: AssessmentSubmissionRequest):
     """
     Submit PHQ-9 or GAD-7 responses, calculate total score, map severity band & risk tier,
-    store to PostgreSQL, and return evaluation summary.
+    evaluate clinical safety pathway, process contextual follow-up, persist attempt,
+    and return evaluation summary with evidence-based next steps.
     """
     try:
-        result = process_assessment(
+        result = await process_assessment_async(
             user_id=request.user_id,
             test_type=request.test_type,
             responses=request.responses,
+            follow_up_data=request.follow_up_data,
+            safety_disclosure=request.safety_disclosure,
         )
         return AssessmentResponse(**result)
     except ValueError as e:
@@ -293,6 +325,24 @@ async def submit_assessment(request: AssessmentSubmissionRequest):
     except Exception as e:
         logger.error(f"Assessment evaluation failed: {e}")
         raise HTTPException(status_code=500, detail="Internal server error evaluating assessment")
+
+
+@app.get("/api/assessment/history/{user_id}", response_model=AssessmentHistoryResponse)
+async def get_assessment_history(user_id: str, limit: int = 20):
+    """
+    Retrieve user's historical self-assessment attempts for longitudinal progress tracking.
+    """
+    try:
+        items = get_user_assessment_history(user_id=user_id, limit=limit)
+        history_models = [AssessmentHistoryItem(**item) for item in items]
+        return AssessmentHistoryResponse(
+            user_id=user_id,
+            history=history_models,
+            count=len(history_models),
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch assessment history for {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch assessment history")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -305,8 +355,8 @@ async def start_therapy_session(request: StartSessionRequest):
     """
     Start a new therapy session (chat or voice).
 
-    Returns session ID and the user's most recent session summaries
-    for continuity context display on the frontend.
+    Returns session ID and a clean welcoming message.
+    Isolates guest sessions to avoid cross-session bleed.
     """
     session_id = create_therapy_session(
         user_id=request.user_id,
@@ -316,14 +366,26 @@ async def start_therapy_session(request: StartSessionRequest):
     if session_id is None:
         raise HTTPException(status_code=500, detail="Failed to create therapy session")
 
-    # Load prior session summaries for continuity banner
-    prior_summaries = get_recent_session_summaries(request.user_id, limit=3)
+    # Load prior session summaries ONLY for registered users (avoid guest test bleed)
+    prior_summaries = []
+    if not request.user_id.startswith("guest_"):
+        prior_summaries = get_recent_session_summaries(request.user_id, limit=3)
+
+    welcome_msg = (
+        "Hi, it's good to have you here. What's been on your mind lately? "
+        "We can take our time with whatever feels important to you today."
+    )
+    # Persist the initial opening greeting in messages so DB and UI match
+    save_therapy_message(session_id, "assistant", welcome_msg)
 
     from datetime import datetime, timezone
     return StartSessionResponse(
         session_id=session_id,
         mode=request.mode,
         started_at=datetime.now(timezone.utc).isoformat(),
+        current_stage="opening",
+        stage_label="Opening Check-in",
+        welcome_message=welcome_msg,
         prior_summaries=prior_summaries,
     )
 
@@ -396,6 +458,9 @@ async def chat_therapy_message(request: ChatMessageRequest):
         risk_tier=result["risk_tier"],
         urgency_level=result.get("urgency_level", "STABLE"),
         crisis_activated=result.get("crisis_activated", False),
+        current_stage=result.get("current_stage"),
+        stage_label=result.get("stage_label"),
+        main_concern=result.get("main_concern"),
         tools_used=result.get("tools_used", []),
     )
 
@@ -432,6 +497,7 @@ async def voice_therapy_interact(
         session_id=session_id,
         user_id=user_id,
         audio_bytes=audio_bytes,
+        filename=audio.filename or "audio.webm",
     )
 
     return VoiceTherapyResponse(
@@ -445,3 +511,22 @@ async def voice_therapy_interact(
         speech_emotion=result.get("speech_emotion"),
         tools_used=result.get("tools_used", []),
     )
+
+
+class VoiceGreetingRequest(BaseModel):
+    session_id: int
+    user_id: str
+    time_of_day: Optional[str] = None
+
+
+@app.post("/api/voice-therapy/greeting")
+async def voice_therapy_greeting(request: VoiceGreetingRequest):
+    """
+    Generate proactive opening therapist greeting with TTS audio when a voice session starts.
+    """
+    return await generate_voice_greeting(
+        session_id=request.session_id,
+        user_id=request.user_id,
+        time_of_day=request.time_of_day,
+    )
+

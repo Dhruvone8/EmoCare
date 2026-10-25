@@ -1,19 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { submitAssessment } from "@/lib/api";
 import type { AssessmentResponse } from "@/types/api";
+import { ConsentIntro } from "./components/ConsentIntro";
+import { QuestionCard } from "./components/QuestionCard";
+import { ReviewList } from "./components/ReviewList";
+import { FollowUpStage, FollowUpFormData } from "./components/FollowUpStage";
+import { SafetyModal, SafetyDisclosureData } from "./components/SafetyModal";
+import { AssessmentResults } from "./components/AssessmentResults";
 
-const SCALE_OPTIONS = [
-  { value: 0, label: "Not at all", subtext: "0 days" },
-  { value: 1, label: "Several days", subtext: "1-6 days" },
-  { value: 2, label: "More than half the days", subtext: "7-11 days" },
-  { value: 3, label: "Nearly every day", subtext: "12-14 days" },
-];
-
+// Authoritative PHQ-9 (Kroenke, Spitzer, Williams, 2001)
 const PHQ9_QUESTIONS = [
   "Little interest or pleasure in doing things",
   "Feeling down, depressed, or hopeless",
@@ -22,10 +20,14 @@ const PHQ9_QUESTIONS = [
   "Poor appetite or overeating",
   "Feeling bad about yourself — or that you are a failure or have let yourself or your family down",
   "Trouble concentrating on things, such as reading the newspaper or watching television",
-  "Moving or speaking so slowly that other people could have noticed? Or the opposite — being so fidgety or restless",
+  "Moving or speaking so slowly that other people could have noticed? Or the opposite — being so fidgety or restless that you have been moving around a lot more than usual",
   "Thoughts that you would be better off dead or of hurting yourself in some way",
 ];
 
+const PHQ9_TIMEFRAME =
+  "Over the last 2 weeks, how often have you been bothered by any of the following problems?";
+
+// Authoritative GAD-7 (Spitzer, Kroenke, Williams, Löwe, 2006)
 const GAD7_QUESTIONS = [
   "Feeling nervous, anxious, or on edge",
   "Not being able to stop or control worrying",
@@ -36,48 +38,151 @@ const GAD7_QUESTIONS = [
   "Feeling afraid, as if something awful might happen",
 ];
 
+const GAD7_TIMEFRAME =
+  "Over the last 2 weeks, how often have you been bothered by the following problems?";
+
+type ViewMode = "card" | "review" | "followup" | "results";
+
 export default function AssessmentPage() {
-  const router = useRouter();
   const { user, openAuthModal } = useAuth();
 
+  // Test Selection & Consent
   const [testType, setTestType] = useState<"phq9" | "gad7">("phq9");
   const [consentGiven, setConsentGiven] = useState(false);
-  const [responses, setResponses] = useState<number[]>(new Array(9).fill(0));
+
+  // Critical fix: Answers start completely UNANSWERED (null)
+  // Completely separate state for PHQ-9 and GAD-7 so tab switching preserves answers
+  const [phq9Responses, setPhq9Responses] = useState<(number | null)[]>(
+    new Array(9).fill(null)
+  );
+  const [gad7Responses, setGad7Responses] = useState<(number | null)[]>(
+    new Array(7).fill(null)
+  );
+
+  // Navigation & View mode
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>("card");
+
+  // Safety pathway state
+  const [safetyModalOpen, setSafetyModalOpen] = useState(false);
+  const [safetyDisclosure, setSafetyDisclosure] = useState<SafetyDisclosureData | null>(null);
+
+  // Submission & Results
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AssessmentResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
-  const questions = testType === "phq9" ? PHQ9_QUESTIONS : GAD7_QUESTIONS;
+  const activeQuestions = testType === "phq9" ? PHQ9_QUESTIONS : GAD7_QUESTIONS;
+  const activeTimeframe = testType === "phq9" ? PHQ9_TIMEFRAME : GAD7_TIMEFRAME;
+  const activeResponses = testType === "phq9" ? phq9Responses : gad7Responses;
 
+  // Handle Tab Switch (preserves responses for both tests)
   const handleTestTypeChange = (type: "phq9" | "gad7") => {
+    if (type === testType) return;
     setTestType(type);
-    setResponses(new Array(type === "phq9" ? 9 : 7).fill(0));
-    setResult(null);
+    setCurrentQuestionIndex(0);
+    setViewMode("card");
+    setValidationError(null);
     setError(null);
   };
 
+  // Option selection
   const handleOptionSelect = (questionIndex: number, value: number) => {
-    const updated = [...responses];
-    updated[questionIndex] = value;
-    setResponses(updated);
+    setValidationError(null);
+
+    if (testType === "phq9") {
+      const updated = [...phq9Responses];
+      updated[questionIndex] = value;
+      setPhq9Responses(updated);
+
+      // Clinical Safety Pathway Trigger: Item 9 endorsed (> 0)
+      if (questionIndex === 8 && value > 0 && !safetyDisclosure) {
+        setSafetyModalOpen(true);
+      }
+    } else {
+      const updated = [...gad7Responses];
+      updated[questionIndex] = value;
+      setGad7Responses(updated);
+    }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Next / Continue button logic
+  const handleNext = () => {
+    const currentAnswer = activeResponses[currentQuestionIndex];
+    if (currentAnswer === null) {
+      setValidationError("Please select an answer to continue.");
+      return;
+    }
+    setValidationError(null);
+
+    if (currentQuestionIndex < activeQuestions.length - 1) {
+      setCurrentQuestionIndex((prev) => prev + 1);
+    } else {
+      // Check if all questions are answered
+      const allDone = activeResponses.every((r) => r !== null);
+      if (allDone) {
+        setViewMode("followup");
+      } else {
+        setViewMode("review");
+      }
+    }
+  };
+
+  const handlePrev = () => {
+    setValidationError(null);
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex((prev) => prev - 1);
+    }
+  };
+
+  const handleJumpToQuestion = (qIndex: number) => {
+    setValidationError(null);
+    setCurrentQuestionIndex(qIndex);
+    setViewMode("card");
+  };
+
+  const handleProceedToFollowUp = () => {
+    const incompleteIndex = activeResponses.findIndex((r) => r === null);
+    if (incompleteIndex !== -1) {
+      setValidationError(
+        `Question ${incompleteIndex + 1} is unanswered. All questions must be completed.`
+      );
+      return;
+    }
+    setValidationError(null);
+    setViewMode("followup");
+  };
+
+  // Handle final submission from Contextual Follow-up
+  const handleFollowUpSubmit = async (followUpData: FollowUpFormData) => {
+    // Verify no unanswered items
+    if (activeResponses.some((r) => r === null)) {
+      setError("Assessment is incomplete. Please answer all screening questions.");
+      setViewMode("review");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    const userId = user?.id || "guest_onboarding_" + Math.random().toString(36).substring(7);
+    const userId = user?.id || "guest_" + Math.random().toString(36).substring(7);
 
     try {
+      const validResponses = activeResponses as number[];
+
       const res = await submitAssessment({
         user_id: userId,
         test_type: testType,
-        responses: responses.slice(0, questions.length),
+        responses: validResponses,
+        follow_up_data: followUpData,
+        safety_disclosure: safetyDisclosure ? { ...safetyDisclosure } : undefined,
       });
-      setResult(res);
 
-      // Save to localStorage so the home dashboard can immediately reflect baseline
+      setResult(res);
+      setViewMode("results");
+
+      // Save to localStorage for Home Dashboard baseline display
       if (typeof window !== "undefined") {
         localStorage.setItem(
           "emocare_last_assessment",
@@ -98,277 +203,177 @@ export default function AssessmentPage() {
     }
   };
 
+  // Retake or switch assessment
+  const handleRetake = (type: "phq9" | "gad7") => {
+    setTestType(type);
+    if (type === "phq9") {
+      setPhq9Responses(new Array(9).fill(null));
+    } else {
+      setGad7Responses(new Array(7).fill(null));
+    }
+    setSafetyDisclosure(null);
+    setCurrentQuestionIndex(0);
+    setResult(null);
+    setError(null);
+    setValidationError(null);
+    setViewMode("card");
+  };
+
+  // Approximate tentative score for adaptive branching
+  const currentAnsweredScores = activeResponses.filter((r): r is number => r !== null);
+  const currentTotal = currentAnsweredScores.reduce((a, b) => a + b, 0);
+  const q9Val = testType === "phq9" ? phq9Responses[8] : 0;
+
   return (
-    <div className="max-w-4xl mx-auto flex flex-col gap-8 pb-12">
-      {/* ── Header ────────────────────────────────────────────── */}
-      <section className="text-center max-w-2xl mx-auto">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider mb-4 border border-primary/20">
+    <div className="max-w-4xl mx-auto flex flex-col gap-6 sm:gap-8 pb-12 w-full">
+      {/* ── Page Header ────────────────────────────────────────────── */}
+      <section className="text-center max-w-2xl mx-auto px-4">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider mb-3 border border-primary/20">
           <span>🌿</span>
-          <span>Onboarding & Baseline Check-in</span>
+          <span>Standardized Clinical Self-Screening</span>
         </div>
-        <h1 className="text-3xl md:text-5xl font-semibold text-on-surface tracking-tight leading-tight mb-3">
-          Self-Assessment Check-in
+        <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-on-surface tracking-tight leading-tight mb-2">
+          Emotional Health Check-in
         </h1>
-        <p className="text-base md:text-lg text-on-surface-variant leading-relaxed">
-          Calibrate your personal AI companion with standard, research-backed emotional health questionnaires.
+        <p className="text-sm sm:text-base md:text-lg text-on-surface-variant leading-relaxed">
+          Validated questionnaires (PHQ-9 & GAD-7) to calibrate your emotional baseline and guide supportive care.
         </p>
       </section>
 
-      {/* ── Disclaimer & Consent Step ─────────────────────────── */}
+      {/* ── Step 0: Informed Consent & Clinical Disclaimer ─────────── */}
       {!consentGiven && (
-        <div className="glass-panel rounded-2xl p-6 md:p-8 border border-outline-variant/30 bg-surface/60 backdrop-blur-md flex flex-col gap-6 shadow-xl">
-          <div className="flex items-start gap-4">
-            <div className="p-3 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-              <span className="material-symbols-outlined text-2xl">info</span>
-            </div>
-            <div>
-              <h2 className="text-lg md:text-xl font-semibold text-on-surface mb-2">
-                Before You Begin: Academic Project Disclaimer
-              </h2>
-              <ul className="text-sm text-on-surface-variant space-y-2 list-disc list-inside leading-relaxed">
-                <li>
-                  <strong>Screening Tool Only:</strong> EmoCare is an affective computing research project and supportive companion. It is <u>not</u> a clinical diagnostic tool or medical device.
-                </li>
-                <li>
-                  <strong>Tracking Trends:</strong> Your assessment results are securely stored in your personal profile to help you reflect on wellbeing patterns over time.
-                </li>
-                <li>
-                  <strong>Immediate Crisis Support:</strong> If you are in severe distress or thinking of self-harm, please reach out to emergency services or call/text <strong>988</strong> (US/Canada) or <strong>112/911</strong>.
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-outline-variant/20 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-on-surface-variant">
-              {user ? (
-                <>Logged in as <strong>{user.email}</strong></>
-              ) : (
-                <>You can take this as a guest or <button onClick={() => openAuthModal("signup")} className="text-primary font-semibold hover:underline">sign in</button> to save your trends.</>
-              )}
-            </p>
-            <button
-              onClick={() => setConsentGiven(true)}
-              className="w-full sm:w-auto px-8 py-3 rounded-full bg-primary hover:bg-primary/90 text-on-primary font-medium text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>I Understand & Wish to Proceed</span>
-              <span className="material-symbols-outlined text-sm">arrow_forward</span>
-            </button>
-          </div>
-        </div>
+        <ConsentIntro
+          user={user}
+          onConsent={() => setConsentGiven(true)}
+          openAuthModal={openAuthModal}
+        />
       )}
 
-      {/* ── Questionnaire Form ─────────────────────────────────── */}
-      {consentGiven && !result && (
+      {/* ── Active Assessment Workflow ─────────────────────────────── */}
+      {consentGiven && viewMode !== "results" && (
         <div className="flex flex-col gap-6">
-          {/* Test Switcher */}
+          {/* Test Switcher Tabs */}
           <div className="glass-panel rounded-2xl p-2 bg-surface/50 border border-outline-variant/20 flex gap-2">
             <button
               type="button"
               onClick={() => handleTestTypeChange("phq9")}
-              className={`flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              className={`flex-1 py-3 px-3 sm:px-4 rounded-xl font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 testType === "phq9"
                   ? "bg-primary text-on-primary shadow-md"
                   : "text-on-surface-variant hover:bg-surface-variant/40"
               }`}
             >
-              <span className="material-symbols-outlined text-lg">psychology</span>
-              <span>PHQ-9 (Depression Screening)</span>
+              <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                psychology
+              </span>
+              <span>PHQ-9 Depression Screener</span>
+              {phq9Responses.some((r) => r !== null) && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" title="Responses recorded" />
+              )}
             </button>
+
             <button
               type="button"
               onClick={() => handleTestTypeChange("gad7")}
-              className={`flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              className={`flex-1 py-3 px-3 sm:px-4 rounded-xl font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
                 testType === "gad7"
                   ? "bg-primary text-on-primary shadow-md"
                   : "text-on-surface-variant hover:bg-surface-variant/40"
               }`}
             >
-              <span className="material-symbols-outlined text-lg">air</span>
-              <span>GAD-7 (Anxiety Screening)</span>
+              <span className="material-symbols-outlined text-lg" aria-hidden="true">
+                air
+              </span>
+              <span>GAD-7 Anxiety Screener</span>
+              {gad7Responses.some((r) => r !== null) && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" title="Responses recorded" />
+              )}
             </button>
           </div>
 
-          <div className="glass-panel rounded-2xl p-6 md:p-8 bg-surface/70 border border-outline-variant/30 backdrop-blur-md shadow-xl">
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold text-on-surface mb-1">
-                {testType === "phq9" ? "PHQ-9 Depression Screener" : "GAD-7 Anxiety Screener"}
-              </h2>
-              <p className="text-sm text-on-surface-variant">
-                Over the <strong>last 2 weeks</strong>, how often have you been bothered by any of the following problems?
-              </p>
+          {/* View Mode 1: Question-by-Question Accessible Card */}
+          {viewMode === "card" && (
+            <QuestionCard
+              questionNumber={currentQuestionIndex + 1}
+              totalQuestions={activeQuestions.length}
+              questionText={activeQuestions[currentQuestionIndex]}
+              timeframe={activeTimeframe}
+              selectedValue={activeResponses[currentQuestionIndex]}
+              onSelect={(val) => handleOptionSelect(currentQuestionIndex, val)}
+              onNext={handleNext}
+              onPrev={handlePrev}
+              onReviewMode={() => setViewMode("review")}
+              isFirst={currentQuestionIndex === 0}
+              isLast={currentQuestionIndex === activeQuestions.length - 1}
+              validationError={validationError}
+            />
+          )}
+
+          {/* View Mode 2: Review All Answers List */}
+          {viewMode === "review" && (
+            <ReviewList
+              testType={testType}
+              questions={activeQuestions}
+              responses={activeResponses}
+              onSelectOption={handleOptionSelect}
+              onJumpToQuestion={handleJumpToQuestion}
+              onProceedToFollowUp={handleProceedToFollowUp}
+              onBackToCard={() => setViewMode("card")}
+              validationError={validationError}
+            />
+          )}
+
+          {/* View Mode 3: Adaptive Follow-Up Stage */}
+          {viewMode === "followup" && (
+            <FollowUpStage
+              testType={testType}
+              initialTotalScore={currentTotal}
+              q9Endorsed={Boolean(q9Val && q9Val > 0)}
+              onSubmit={handleFollowUpSubmit}
+              onBackToScreening={() => setViewMode("review")}
+              isSubmitting={loading}
+            />
+          )}
+
+          {/* Global API or Submission Error */}
+          {error && (
+            <div className="p-4 rounded-xl bg-error/10 border border-error/25 text-error text-xs sm:text-sm flex items-center gap-2">
+              <span className="material-symbols-outlined text-base shrink-0" aria-hidden="true">
+                error
+              </span>
+              <span>{error}</span>
             </div>
-
-            <form onSubmit={handleSubmit} className="flex flex-col gap-8">
-              {questions.map((q, qIndex) => (
-                <div
-                  key={qIndex}
-                  className="p-5 rounded-xl bg-surface-variant/20 border border-outline-variant/20 flex flex-col gap-4"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-md">
-                      Q{qIndex + 1}
-                    </span>
-                    <span className="text-sm md:text-base font-medium text-on-surface leading-snug">
-                      {q}
-                    </span>
-                  </div>
-
-                  {/* 4 Choices */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-                    {SCALE_OPTIONS.map((opt) => {
-                      const isSelected = responses[qIndex] === opt.value;
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          onClick={() => handleOptionSelect(qIndex, opt.value)}
-                          className={`p-3 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between gap-1 ${
-                            isSelected
-                              ? "bg-primary/15 border-primary text-primary shadow-sm"
-                              : "bg-surface/80 border-outline-variant/20 hover:border-outline-variant/50 text-on-surface"
-                          }`}
-                        >
-                          <span className="text-xs font-semibold">
-                            {opt.value} — {opt.label}
-                          </span>
-                          <span className="text-[11px] text-on-surface-variant/70">
-                            {opt.subtext}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-
-              {error && (
-                <div className="p-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 px-6 rounded-full bg-primary hover:bg-primary/90 text-on-primary font-medium text-base transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {loading ? (
-                  <>
-                    <span className="material-symbols-outlined animate-spin text-lg">
-                      progress_activity
-                    </span>
-                    <span>Analyzing responses...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Submit & Calculate Baseline</span>
-                    <span className="material-symbols-outlined text-lg">check_circle</span>
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
+          )}
         </div>
       )}
 
-      {/* ── Results View ─────────────────────────────────────────── */}
-      {result && (
-        <div className="glass-panel rounded-2xl p-6 md:p-10 bg-surface/80 border border-outline-variant/30 backdrop-blur-md shadow-2xl flex flex-col gap-8 animate-in fade-in zoom-in-95 duration-200">
-          <div className="text-center max-w-lg mx-auto">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4 text-3xl">
-              📊
-            </div>
-            <h2 className="text-2xl md:text-3xl font-semibold text-on-surface mb-2">
-              Your Assessment Baseline
-            </h2>
-            <p className="text-sm text-on-surface-variant">
-              {result.test_display_name} • Evaluated {new Date(result.timestamp).toLocaleDateString()}
-            </p>
-          </div>
-
-          {/* Metric Highlights */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-5 rounded-xl bg-surface-variant/30 border border-outline-variant/20 text-center">
-              <span className="text-xs uppercase tracking-wider text-on-surface-variant font-medium">
-                Total Score
-              </span>
-              <div className="text-3xl font-bold text-primary mt-1 font-mono">
-                {result.total_score} <span className="text-sm text-on-surface-variant font-normal">/ {result.max_score}</span>
-              </div>
-            </div>
-
-            <div className="p-5 rounded-xl bg-surface-variant/30 border border-outline-variant/20 text-center">
-              <span className="text-xs uppercase tracking-wider text-on-surface-variant font-medium">
-                Severity Band
-              </span>
-              <div className="text-xl font-bold text-on-surface mt-1">
-                {result.severity_band}
-              </div>
-            </div>
-
-            <div className="p-5 rounded-xl bg-surface-variant/30 border border-outline-variant/20 text-center">
-              <span className="text-xs uppercase tracking-wider text-on-surface-variant font-medium">
-                App Risk Tier
-              </span>
-              <div className="text-xl font-bold mt-1 flex items-center justify-center gap-1.5">
-                <span>{result.risk_tier === "Low" ? "🟢" : result.risk_tier === "Moderate" ? "🟡" : "🔴"}</span>
-                <span>{result.risk_tier}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Supportive Plain-Language Interpretation */}
-          <div
-            className={`p-6 rounded-2xl border ${
-              result.risk_tier === "Low"
-                ? "bg-emerald-500/10 border-emerald-500/30 text-on-surface"
-                : result.risk_tier === "Moderate"
-                ? "bg-amber-500/10 border-amber-500/30 text-on-surface"
-                : "bg-rose-500/10 border-rose-500/30 text-on-surface"
-            }`}
-          >
-            <h3 className="text-base font-semibold mb-2 flex items-center gap-2">
-              <span className="material-symbols-outlined">lightbulb</span>
-              <span>Understanding Your Results</span>
-            </h3>
-            <p className="text-sm leading-relaxed text-on-surface-variant">
-              {result.plain_language_summary}
-            </p>
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-outline-variant/20">
-            <button
-              onClick={() => {
-                setResult(null);
-                setResponses(new Array(questions.length).fill(0));
-              }}
-              className="text-xs text-on-surface-variant hover:text-primary font-medium cursor-pointer"
-            >
-              ← Re-take or choose another test
-            </button>
-
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              {!user && (
-                <button
-                  onClick={() => openAuthModal("signup")}
-                  className="px-5 py-2.5 rounded-full border border-primary/40 text-primary text-xs font-medium hover:bg-primary/10 transition-colors cursor-pointer"
-                >
-                  Create Account to Save Trends
-                </button>
-              )}
-              <Link
-                href="/"
-                className="px-6 py-2.5 rounded-full bg-primary hover:bg-primary/90 text-on-primary text-xs font-medium transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"
-              >
-                <span>Continue to Dashboard</span>
-                <span className="material-symbols-outlined text-sm">arrow_forward</span>
-              </Link>
-            </div>
-          </div>
-        </div>
+      {/* ── View Mode 4: Comprehensive Upgraded Results Page ────────── */}
+      {viewMode === "results" && result && (
+        <AssessmentResults
+          result={result}
+          onRetake={handleRetake}
+          openAuthModal={openAuthModal}
+          isGuest={!user}
+        />
       )}
+
+      {/* ── Clinical Safety Modal (Dedicated Pathway) ────────────────── */}
+      <SafetyModal
+        isOpen={safetyModalOpen}
+        onProceed={(disclosure) => {
+          setSafetyDisclosure(disclosure);
+          setSafetyModalOpen(false);
+        }}
+        onCancel={() => {
+          // Reset Q9 answer to null so user can reconsider without being blocked
+          if (testType === "phq9") {
+            const updated = [...phq9Responses];
+            updated[8] = null;
+            setPhq9Responses(updated);
+          }
+          setSafetyModalOpen(false);
+        }}
+      />
     </div>
   );
 }

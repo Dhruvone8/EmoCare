@@ -31,12 +31,22 @@ logger = logging.getLogger("emocare.tts")
 DEFAULT_TTS_MODEL = "eleven_flash_v2_5"
 
 
+import re
+
+def _clean_spoken_text(text: str) -> str:
+    """Strip markdown formatting and special characters that sound awkward in TTS."""
+    # Remove asterisks, hashtags, underscores, backticks, brackets
+    cleaned = re.sub(r"[\*#_`~>\[\]]", "", text)
+    # Remove multiple spaces/newlines
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
 async def synthesize_speech(text: str) -> Optional[str]:
     """
-    Convert text to spoken audio via ElevenLabs API.
+    Convert text to spoken audio via ElevenLabs API using ultra-low latency settings.
 
     Returns base64-encoded audio string (mp3), or None if TTS is unavailable.
-    The frontend can decode this to an audio element for playback.
     """
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
     voice_id = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL").strip() or "EXAVITQu4vr4xnSDxMaL"
@@ -46,43 +56,46 @@ async def synthesize_speech(text: str) -> Optional[str]:
         logger.info("No ELEVENLABS_API_KEY configured — TTS unavailable")
         return None
 
-    if not text or not text.strip():
+    cleaned_text = _clean_spoken_text(text)
+    if not cleaned_text:
         return None
 
     try:
-        import httpx
+        from .http_pool import get_shared_client
+        client = get_shared_client()
 
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        # optimize_streaming_latency=4 enables maximum speed tier
+        # output_format=mp3_22050_32 is optimized for voice bandwidth & ultra-fast transfer
+        url = (
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+            "?optimize_streaming_latency=4&output_format=mp3_22050_32"
+        )
         headers = {
             "xi-api-key": elevenlabs_api_key,
             "Content-Type": "application/json",
             "Accept": "audio/mpeg",
         }
         payload = {
-            "text": text,
+            "text": cleaned_text,
             "model_id": model_id,
             "voice_settings": {
-                "stability": 0.75,        # High stability for calm, consistent delivery
-                "similarity_boost": 0.75,  # Natural voice matching
-                "style": 0.0,             # Minimal dramatic inflection
+                "stability": 0.70,        # Balanced stability for natural cadence
+                "similarity_boost": 0.75,  # Natural voice tone
+                "style": 0.0,
                 "use_speaker_boost": True,
             },
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            if resp.status_code == 200:
-                audio_bytes = resp.content
-                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-                logger.info(f"TTS audio generated ({len(audio_bytes)} bytes)")
-                return audio_b64
-            else:
-                logger.error(f"ElevenLabs API returned {resp.status_code}: {resp.text[:200]}")
-                return None
+        resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code == 200:
+            audio_bytes = resp.content
+            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+            logger.info(f"TTS audio generated ({len(audio_bytes)} bytes) in ultra-low latency mode")
+            return audio_b64
+        else:
+            logger.error(f"ElevenLabs API returned {resp.status_code}: {resp.text[:200]}")
+            return None
 
-    except ImportError:
-        logger.warning("httpx not installed — TTS unavailable")
-        return None
     except Exception as e:
         logger.error(f"TTS synthesis error: {e}")
         return None

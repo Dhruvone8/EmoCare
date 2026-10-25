@@ -104,6 +104,8 @@ class AssessmentSubmissionRequest(BaseModel):
     user_id: str = Field(..., min_length=1, description="Unique user or session identifier")
     test_type: str = Field(..., description="'phq9' or 'gad7'")
     responses: list[int] = Field(..., description="List of responses (0-3 each, 9 items for PHQ-9, 7 for GAD-7)")
+    follow_up_data: Optional[dict] = Field(default=None, description="Contextual follow-up responses")
+    safety_disclosure: Optional[dict] = Field(default=None, description="Safety verification responses if Q9 endorsed")
 
 
 class AssessmentResponse(BaseModel):
@@ -117,6 +119,36 @@ class AssessmentResponse(BaseModel):
     risk_tier: str = Field(..., description="Mapped app risk tier: Low | Moderate | High")
     plain_language_summary: str
     timestamp: str
+    safety_alert: bool = False
+    safety_details: Optional[dict] = None
+    symptom_breakdown: Optional[dict] = None
+    follow_up_summary: Optional[dict] = None
+    recommended_steps: list[str] = Field(default_factory=list)
+    clinical_disclaimer: str = (
+        "EmoCare self-assessments are standardized screening tools intended for informational "
+        "and reflective support. They do not constitute a clinical diagnosis or medical evaluation. "
+        "Please consult a qualified healthcare professional or licensed mental health provider for clinical evaluation."
+    )
+
+
+class AssessmentHistoryItem(BaseModel):
+    id: Optional[int] = None
+    user_id: str
+    test_type: str
+    total_score: int
+    max_score: int
+    severity_band: str
+    risk_tier: str
+    safety_flag: bool = False
+    q9_score: Optional[int] = 0
+    timestamp: str
+    llm_summary: Optional[str] = None
+
+
+class AssessmentHistoryResponse(BaseModel):
+    user_id: str
+    history: list[AssessmentHistoryItem]
+    count: int
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -133,6 +165,9 @@ class StartSessionResponse(BaseModel):
     session_id: int
     mode: str
     started_at: str
+    current_stage: str = "opening"
+    stage_label: str = "Opening Check-in"
+    welcome_message: Optional[str] = None
     prior_summaries: list[dict] = Field(
         default_factory=list,
         description="Most recent 1–3 session summaries for continuity context"
@@ -157,6 +192,9 @@ class ChatMessageResponse(BaseModel):
     risk_tier: str = Field(..., description="Risk tier of the user's message: Low | Moderate | High")
     urgency_level: str = Field("STABLE", description="STABLE | WARNING | CRITICAL")
     crisis_activated: bool = Field(False, description="True if crisis protocol was triggered")
+    current_stage: Optional[str] = None
+    stage_label: Optional[str] = None
+    main_concern: Optional[str] = None
     tools_used: list[ToolInvocation] = Field(
         default_factory=list,
         description="Deterministic CBT/crisis tools invoked by the LLM for this turn"
@@ -174,6 +212,8 @@ class SessionSummaryResponse(BaseModel):
     concerns: list[str] = Field(default_factory=list)
     goals: list[str] = Field(default_factory=list)
     techniques_used: list[str] = Field(default_factory=list)
+    key_insights: list[str] = Field(default_factory=list)
+    action_steps: list[str] = Field(default_factory=list)
 
 
 class UserSessionListResponse(BaseModel):

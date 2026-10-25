@@ -29,6 +29,7 @@ export default function ChatTherapyPage() {
   const [sessionStarting, setSessionStarting] = useState(false);
   const [sessionEnding, setSessionEnding] = useState(false);
   const [priorContext, setPriorContext] = useState<StartSessionResponse["prior_summaries"]>([]);
+  const [currentStageLabel, setCurrentStageLabel] = useState<string>("Opening Check-in");
 
   /* Chat state */
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -42,13 +43,27 @@ export default function ChatTherapyPage() {
     concerns: string[];
     goals: string[];
     techniques_used: string[];
+    key_insights?: string[];
+    action_steps?: string[];
   } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isSendingRef = useRef(false);
 
-  const userId =
-    user?.id || "guest_" + (typeof window !== "undefined" ? window.location.hostname : "anon");
+  const [guestId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      let gid = localStorage.getItem("emocare_guest_id");
+      if (!gid) {
+        gid = "guest_" + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem("emocare_guest_id", gid);
+      }
+      return gid;
+    }
+    return "guest_client";
+  });
+
+  const userId = user?.id || guestId || "guest_client";
 
   /* ── Auto-scroll ──────────────────────────────────────────────── */
   useEffect(() => {
@@ -67,12 +82,17 @@ export default function ChatTherapyPage() {
       });
       setSessionId(res.session_id);
       setPriorContext(res.prior_summaries);
+      if (res.stage_label) {
+        setCurrentStageLabel(res.stage_label);
+      }
+      const welcome =
+        res.welcome_message ||
+        "Hi, it's good to have you here. What's been on your mind lately? We can take our time with whatever feels important to you today.";
       setMessages([
         {
           id: "welcome",
           role: "assistant",
-          content:
-            "Welcome to your safe space. I'm here to support you with evidence-based techniques. What's on your mind today?",
+          content: welcome,
           timestamp: new Date(),
         },
       ]);
@@ -87,8 +107,9 @@ export default function ChatTherapyPage() {
 
   /* ── Send Message ─────────────────────────────────────────────── */
   const handleSend = async () => {
-    if (!input.trim() || !sessionId || sending) return;
+    if (!input.trim() || !sessionId || sending || isSendingRef.current) return;
 
+    isSendingRef.current = true;
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
@@ -108,6 +129,10 @@ export default function ChatTherapyPage() {
         message: userMessage.content,
       });
 
+      if (res.stage_label) {
+        setCurrentStageLabel(res.stage_label);
+      }
+
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
@@ -125,6 +150,7 @@ export default function ChatTherapyPage() {
       );
     } finally {
       setSending(false);
+      isSendingRef.current = false;
       inputRef.current?.focus();
     }
   };
@@ -185,13 +211,21 @@ export default function ChatTherapyPage() {
         </div>
 
         {sessionId && !summary && (
-          <button
-            onClick={handleEndSession}
-            disabled={sessionEnding}
-            className="px-4 py-2 text-xs font-medium rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-error hover:border-error/30 hover:bg-error/5 transition-all cursor-pointer"
-          >
-            {sessionEnding ? "Ending..." : "End Session"}
-          </button>
+          <div className="flex items-center gap-2.5">
+            {currentStageLabel && (
+              <span className="tool-badge text-xs font-medium text-primary px-3 py-1.5 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                {currentStageLabel}
+              </span>
+            )}
+            <button
+              onClick={handleEndSession}
+              disabled={sessionEnding}
+              className="px-4 py-2 text-xs font-medium rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-error hover:border-error/30 hover:bg-error/5 transition-all cursor-pointer"
+            >
+              {sessionEnding ? "Ending..." : "End Session"}
+            </button>
+          </div>
         )}
       </div>
 
@@ -212,7 +246,7 @@ export default function ChatTherapyPage() {
                 Begin Your Session
               </h2>
               <p className="text-sm text-on-surface-variant leading-relaxed max-w-sm">
-                Start a guided therapy conversation. I'll use evidence-based CBT
+                Start a guided therapy conversation. I&apos;ll use evidence-based CBT
                 techniques — thought reframing, grounding exercises, and
                 behavioral activation — to support you.
               </p>
@@ -360,6 +394,44 @@ export default function ChatTherapyPage() {
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {summary.key_insights && summary.key_insights.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-on-surface-variant">
+                  Key Insights
+                </span>
+                {summary.key_insights.map((insight, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 text-sm text-on-surface"
+                  >
+                    <span className="material-symbols-outlined text-primary text-sm mt-0.5">
+                      lightbulb
+                    </span>
+                    <span>{insight}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {summary.action_steps && summary.action_steps.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-on-surface-variant">
+                  Action Steps
+                </span>
+                {summary.action_steps.map((step, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 text-sm text-on-surface"
+                  >
+                    <span className="material-symbols-outlined text-primary text-sm mt-0.5">
+                      check_circle_outline
+                    </span>
+                    <span>{step}</span>
+                  </div>
+                ))}
               </div>
             )}
 
