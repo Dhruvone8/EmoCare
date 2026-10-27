@@ -25,7 +25,9 @@ logs/*
 
 # Environment variables & secrets
 .env
+.env.*
 .env.local
+backend/.env
 
 # IDE & OS
 .vscode/

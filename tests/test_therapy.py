@@ -16,6 +16,7 @@ Validates:
 import pytest
 import asyncio
 from fastapi.testclient import TestClient
+from auth_helpers import auth_headers
 
 from backend.app.main import app
 from backend.app.therapy import process_chat_turn, generate_session_summary
@@ -48,6 +49,12 @@ from backend.app.db import (
 )
 
 client = TestClient(app)
+
+
+def post_as_user(endpoint: str, **kwargs):
+    payload = kwargs.get("json") or {}
+    kwargs.setdefault("headers", auth_headers(payload["user_id"]))
+    return client.request("POST", endpoint, **kwargs)
 
 
 # ── Unit Tests for Intent & Message Clarity ───────────────────────────
@@ -90,7 +97,7 @@ def test_intent_classification_therapeutic_disclosure():
 def test_a_greeting_input():
     """Test A: User says 'hi' -> Natural greeting, no invented history or empty placeholder."""
     async def _run():
-        res = client.post("/api/therapy/session/start", json={"user_id": "test_user_a", "mode": "chat"})
+        res = post_as_user("/api/therapy/session/start", json={"user_id": "test_user_a", "mode": "chat"})
         assert res.status_code == 200
         session_id = res.json()["session_id"]
 
@@ -112,7 +119,7 @@ def test_a_greeting_input():
 def test_b_ambiguous_short_input():
     """Test B: User enters 'h' -> Brief clarification request, no therapeutic inference."""
     async def _run():
-        res = client.post("/api/therapy/session/start", json={"user_id": "test_user_b", "mode": "chat"})
+        res = post_as_user("/api/therapy/session/start", json={"user_id": "test_user_b", "mode": "chat"})
         session_id = res.json()["session_id"]
 
         turn = await process_chat_turn(session_id=session_id, user_id="test_user_b", user_message="h")
@@ -130,7 +137,7 @@ def test_b_ambiguous_short_input():
 def test_c_nonsensical_gibberish_input():
     """Test C: User enters 'hsnjqjw u jkzx' -> Polite clarification, no invented emotional state."""
     async def _run():
-        res = client.post("/api/therapy/session/start", json={"user_id": "test_user_c", "mode": "chat"})
+        res = post_as_user("/api/therapy/session/start", json={"user_id": "test_user_c", "mode": "chat"})
         session_id = res.json()["session_id"]
 
         turn = await process_chat_turn(session_id=session_id, user_id="test_user_c", user_message="hsnjqjw u jkzx")
@@ -152,7 +159,7 @@ def test_d_and_e_professor_dialogue_progression():
     Turn 2: 'I felt embarrassed because everyone was watching.' -> Contextual deepening on embarrassment.
     """
     async def _run():
-        res = client.post("/api/therapy/session/start", json={"user_id": "test_user_de", "mode": "chat"})
+        res = post_as_user("/api/therapy/session/start", json={"user_id": "test_user_de", "mode": "chat"})
         session_id = res.json()["session_id"]
 
         # Turn 1
@@ -184,7 +191,7 @@ def test_f_casual_affectionate_input_after_therapy():
     that does NOT force the previous professor discussion.
     """
     async def _run():
-        res = client.post("/api/therapy/session/start", json={"user_id": "test_user_f", "mode": "chat"})
+        res = post_as_user("/api/therapy/session/start", json={"user_id": "test_user_f", "mode": "chat"})
         session_id = res.json()["session_id"]
 
         # Turn 1: Discuss professor
@@ -216,13 +223,13 @@ def test_g_clean_session_isolation():
     """
     async def _run():
         # Session 1: discussing professor
-        res1 = client.post("/api/therapy/session/start", json={"user_id": "guest_isolation_user", "mode": "chat"})
+        res1 = post_as_user("/api/therapy/session/start", json={"user_id": "guest_isolation_user", "mode": "chat"})
         s1_id = res1.json()["session_id"]
         await process_chat_turn(session_id=s1_id, user_id="guest_isolation_user", user_message="My professor failed me today.")
-        client.post("/api/therapy/session/end", json={"session_id": s1_id, "user_id": "guest_isolation_user"})
+        post_as_user("/api/therapy/session/end", json={"session_id": s1_id, "user_id": "guest_isolation_user"})
 
         # Session 2: completely new session
-        res2 = client.post("/api/therapy/session/start", json={"user_id": "guest_isolation_user", "mode": "chat"})
+        res2 = post_as_user("/api/therapy/session/start", json={"user_id": "guest_isolation_user", "mode": "chat"})
         s2_id = res2.json()["session_id"]
         assert res2.json()["welcome_message"] is not None
         assert "professor" not in res2.json()["welcome_message"].lower()
@@ -243,7 +250,7 @@ def test_h_user_correction():
     is respected and the rejected interpretation is not treated as fact.
     """
     async def _run():
-        res = client.post("/api/therapy/session/start", json={"user_id": "test_user_h", "mode": "chat"})
+        res = post_as_user("/api/therapy/session/start", json={"user_id": "test_user_h", "mode": "chat"})
         session_id = res.json()["session_id"]
 
         await process_chat_turn(
@@ -288,7 +295,7 @@ def test_j_empty_context_fallback_and_validation():
 def test_acute_crisis_safety_handling():
     """Verify that acute crisis signals bypass normal flow and trigger crisis protocol."""
     async def _run():
-        res = client.post("/api/therapy/session/start", json={"user_id": "crisis_test_user", "mode": "chat"})
+        res = post_as_user("/api/therapy/session/start", json={"user_id": "crisis_test_user", "mode": "chat"})
         session_id = res.json()["session_id"]
 
         turn = await process_chat_turn(

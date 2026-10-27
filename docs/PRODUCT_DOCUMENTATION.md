@@ -33,7 +33,7 @@ flowchart TB
         Router["FastAPI Route Handlers"]
         
         subgraph Engine["ML & Inference Engine"]
-            TextModel["Text Classifier (TF-IDF + MentalBERT)"]
+            TextModel["TF-IDF N-gram Logistic Regression Classifier"]
             SpeechModel["Speech Emotion Classifier (Librosa + SER)"]
             BehaviorModel["Behavioral Risk Model"]
             FusionEngine["Late Multimodal Fusion Engine"]
@@ -59,40 +59,36 @@ flowchart TB
 
 ## 3. Core Modalities & Machine Learning Engine
 
-### 3.1. Text Linguistic & Emotion Analysis
+### 3.1. Text Risk Analysis
 * **Route:** `POST /api/predict/text`
+* **Model:** TF-IDF N-gram Logistic Regression Classifier. The `text_mentalbert` artifact directory is a legacy name; the active route does not load MentalBERT or Bio_ClinicalBERT.
 * **Input:** Raw text reflections and journal entries.
-* **Extraction:**
-  * **First-Person Pronoun Ratio:** Measures inward focus and self-referential rumination (`I`, `me`, `my`, `myself`).
-  * **Absolutist Language Ratio:** Detects cognitive distortions and black-and-white thinking (`always`, `never`, `completely`, `must`).
-  * **Negation Density:** Tracks negative valence markers (`not`, `no`, `never`, `cannot`).
-* **Output:** Risk tier (`Low`, `Moderate`, `High`), prediction confidence, and probability distribution across tiers.
+* **Extraction:** TF-IDF features plus first-person pronoun, absolutist-language, and negation-rate markers.
+* **Decision policy:** High uses a 0.20 probability threshold or an acute-distress safety signal. Moderate uses a 0.35 threshold or a combined Moderate+High probability of at least 0.50. Explicit crisis handling remains separate from broader distress classification.
+* **Output:** Risk tier (`Low`, `Moderate`, `High`), selected-tier confidence, raw model probability distribution, and linguistic markers.
 
 ### 3.2. Speech Emotion Recognition (SER) & Prosodics
 * **Route:** `POST /api/predict/speech`
+* **Training data:** RAVDESS + CREMA-D. DAIC-WOZ and IEMOCAP are pending acquisition and are not current training datasets.
 * **Input:** Audio recordings (`.wav`, `.mp3`, `.ogg`, `.webm` up to 10 MB).
-* **Extraction:**
-  * **Acoustic Features:** 13–40 Mel-Frequency Cepstral Coefficients (MFCCs), Spectral Centroid, Zero-Crossing Rate.
-  * **Prosodic Features:** Fundamental frequency ($F_0$) pitch variance, speech articulation rate, pause-to-speech ratio.
-* **Output:** Classified emotion (*calm, happy, sad, angry, fearful, neutral, surprised*), emotion probability distribution, mapped risk tier, and acoustic summary.
+* **Extraction:** 95 model features comprising 40 MFCCs with mean and standard deviation, plus 15 pitch, energy, zero-crossing, spectral, chroma, duration, and pause features. Voice display prosodics are calculated separately.
+* **Output:** Classified emotion (*angry, calm, disgust, fearful, happy, neutral, sad, surprised*), emotion probabilities, mapped risk tier, and acoustic summary.
 
-### 3.3. Passive & Reported Behavioral Sensing
+### 3.3. Reported Behavioral Survey
 * **Route:** `POST /api/predict/behavioral`
-* **Input:** Self-reported or wearable-synced metrics:
-  * Sleep duration (hours) & sleep quality (1–5 scale)
-  * Physical activity level & exercise minutes
-  * Social interaction frequency (1–5 scale)
-  * Daily subjective stress rating & mood rating
-* **Output:** Behavioral risk tier and vulnerability score.
+* **Input:** Self-reported sleep, sleep quality, activity, exercise, social interaction, stress, and mood values.
+* **Mechanism:** Weighted lifestyle distress contributions mapped through softmax normalization. Survey answers are not padded into the StudentLife sensor model; that saved model is an inactive research artifact.
+* **Output:** Behavioral risk tier and normalized risk probabilities.
 
 ### 3.4. Late Decision-Level Multimodal Fusion
 * **Route:** `POST /api/predict/multimodal`
 * **Input:** Any combination of text, voice audio, and behavioral metrics.
 * **Mechanism:**
-  * Computes individual prediction vectors per modality.
-  * Applies late weighted decision fusion with confidence normalization.
-  * **Cross-Modal Agreement Score ($0.0 \to 1.0$):** Measures concordance among modalities. High discordance (e.g., cheerful text with flat/distressed vocal acoustics) flags a **low-confidence / mixed-signal warning**.
-  * Outputs final risk classification, urgency level (`STABLE`, `WARNING`, `CRITICAL`), and human escalation indicators.
+  * Computes predictions only for available modalities.
+  * Uses each probability vector directly for a single modality. For multiple modalities, normalizes the text 0.45, speech 0.35, and behavioral 0.20 weights across available inputs.
+  * Computes pairwise agreement across available modality tiers and flags low-confidence or mixed-signal results.
+  * Outputs final risk classification, urgency (`STABLE`, `WARNING`, `CRITICAL`), and human escalation indicators.
+  * Does not invoke the saved XGBoost fusion meta-classifier in the active route.
 
 ---
 
@@ -131,15 +127,15 @@ Assesses anxiety and tension over the preceding two weeks (Score range: `0 – 2
 > [!IMPORTANT]
 > EmoCare is an affective-computing academic and supportive screening tool. It is **not** a diagnostic medical device.
 
-### 5.1. Non-Hallucinatory CBT Coping Library
-To guarantee clinical safety and eliminate generative AI hallucinations, recommendations are drawn from a deterministic, rule-based CBT catalog:
-1. **Sensory Grounding:** 5-4-3-2-1 technique, somatic anchor exercises.
-2. **Breathwork:** 4-4-4-4 Box breathing, diaphragmatic belly breathing.
-3. **Cognitive Reframing:** Evidence testing, the "best-friend perspective" exercise.
-4. **Behavioral Activation:** 10-minute micro-actions, scheduling pleasant daily events.
+### 5.1. Deterministic CBT Coping Library and Voice Gate
+Structured recommendations come from a rule-based CBT catalog. Voice responses are limited to reflective listening or exact approved tool output, and unsafe generated clinical guidance is replaced before persistence and speech synthesis. These controls reduce generative safety risk without claiming to eliminate every possible error:
+1. **Sensory Grounding:** 5-4-3-2-1 technique and contact-with-the-ground anchors.
+2. **Breathwork:** 4-4-4-4 box breathing and diaphragmatic breathing.
+3. **Cognitive Reframing:** Evidence testing and the best-friend perspective exercise.
+4. **Behavioral Activation:** Small achievable activities and scheduling pleasant events.
 
 ### 5.2. Crisis Hotlines & Critical Urgency
-Whenever the system detects `CRITICAL` urgency, severe distress, or high-risk assessment scores, crisis helpline details are injected at the highest UI priority:
+Explicit crisis signals and qualifying assessment safety pathways can trigger crisis resources at high UI priority:
 * **United States & Canada:** Suicide & Crisis Lifeline — **Dial or Text 988**
 * **India:** iCall Psychosocial Helpline — **9152987821** / Vandrevala Foundation
 * **United Kingdom:** Samaritans — **116 123**
@@ -211,130 +207,95 @@ docker compose -f docker/docker-compose.yml up --build
 
 ---
 
-## Therapy Engine (Phases 1-6)
+## 9. Model Evaluation and Dataset Status
 
-### New API Endpoints (6 additional, total: 13)
+| Configuration | Accuracy | Macro F1 | High-Risk Recall | Status |
+|---|---:|---:|---:|---|
+| Text TF-IDF LogReg, original argmax | 0.7453 | 0.4805 | 0.2619 | Baseline before decision calibration |
+| Speech MFCC XGBoost | 0.5070 | 0.4807 | 0.7439 | RAVDESS + CREMA-D baseline |
+| StudentLife RF | 0.8200 | 0.7850 | 0.8500 | Inactive research artifact |
+
+The previous perfect multimodal results were generated by a preliminary synthetic simulation and are retracted. No validated multimodal accuracy is currently claimed. The ablation reports use null values for those retracted metrics.
+
+The calibrated text decision policy achieves 30/30 High classifications on the curated acute-distress regression statements in `tests/test_text_risk_recall.py`. This small safety regression set measures sensitivity only; it is not independent clinical validation and provides no specificity or overall-accuracy estimate.
+
+## Therapy Engine
+
+### API Endpoints and Ownership
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/therapy/session/start` | Start chat or voice session (returns prior summaries for continuity) |
-| `POST` | `/api/therapy/session/end` | End session, generate & persist structured summary |
-| `GET` | `/api/therapy/sessions/{user_id}` | List all user sessions |
-| `GET` | `/api/therapy/session/{session_id}/messages` | Get session message history |
-| `POST` | `/api/chat/message` | Chat therapy turn (text → safety gate → LLM → tools → reply) |
-| `POST` | `/api/voice-therapy/interact` | Voice therapy turn (audio → STT + SER → safety gate → LLM → TTS) |
+| `POST` | `/api/auth/guest` | Issue a signed token for a new server-generated guest identity |
+| `POST` | `/api/assessment/submit` | Score and persist an owned assessment |
+| `GET` | `/api/assessment/history/{user_id}` | Retrieve owned assessment history |
+| `POST` | `/api/therapy/session/start` | Start an owned chat or voice session |
+| `POST` | `/api/therapy/session/end` | End an owned session and generate its summary |
+| `GET` | `/api/therapy/sessions/{user_id}` | List owned sessions |
+| `GET` | `/api/therapy/session/{session_id}/messages` | Read messages from an owned session |
+| `POST` | `/api/chat/message` | Process a chat turn in an owned session |
+| `POST` | `/api/voice-therapy/interact` | Process a voice turn in an owned session |
+| `POST` | `/api/voice-therapy/greeting` | Generate a greeting in an owned session |
+
+Clinical routes require a verified Supabase bearer token or signed guest token. Requested user IDs must match the token subject, and session IDs are checked against the session owner before reads or writes. Missing or invalid credentials return 401; ownership failures return 403.
 
 ### Safety Architecture
 
-EmoCare uses a **deterministic, zero-hallucination safety pipeline**:
-
-```
-User Input
-    ↓
-┌─────────────────────────────────┐
-│  1. Pre-LLM Risk Classification  │ ← ML models classify BEFORE LLM sees input
-│     Text: NLP risk model         │
-│     Voice: SER acoustic model    │
-└──────────┬──────────────────────┘
-           ↓
-    ┌──────┴──────┐
-    │  Risk HIGH  │ → Deterministic crisis protocol (bypasses LLM entirely)
-    │  or CRITICAL│   → Helpline numbers, grounding exercises, safety plan
-    └──────┬──────┘
-           │ Risk LOW/MODERATE
-           ↓
-┌─────────────────────────────────┐
-│  2. Tool-Calling LLM (Claude)   │ ← Can ONLY invoke pre-defined CBT tools
-│     Tools: thought_reframing,   │   Never generates clinical advice
-│     grounding, behavioral_act,  │   Never paraphrases crisis language
-│     mood_check, sleep_hygiene   │
-└─────────────────────────────────┘
-```
-
-**Safety Rules:**
-- **No generative clinical language**: Crisis responses are 100% deterministic templates
-- **No hallucinated advice**: LLM can only call pre-defined tool functions
-- **Pre-LLM classification**: Risk is assessed BEFORE the LLM sees the input
-- **Dual-modal safety gate**: In voice mode, BOTH acoustic AND text risk must be safe
+1. Text and acoustic risk analysis runs before normal LLM generation.
+2. Explicit suicidal or self-harm crisis signals bypass normal generation and use deterministic crisis resources.
+3. Other therapeutic conversations can use provider tool calling for structured CBT techniques and session context.
+4. Voice output passes through response validation and a voice-specific safety gate. Registered CBT or crisis tool output replaces model-paraphrased guidance; unsafe clinical or instructional content becomes reflective listening.
+5. The sanitized response is the exact text returned, persisted, and sent to ElevenLabs. These controls reduce risk but are not a guarantee against every possible error.
 
 ### Voice Therapy Pipeline
 
 ```
-Audio → Whisper STT (transcription)
-     → SER model (acoustic emotion: 8 classes)
-     → Text risk classifier (on transcript)
-     → Multimodal safety gate
-     → Voice-mode LLM (no markdown, spoken cadence)
-     → ElevenLabs TTS (calm preset) → Base64 audio
+Audio → Whisper STT + acoustic SER
+     → Calibrated text risk classification and explicit crisis gate
+     → Reflective voice LLM with deterministic tools when appropriate
+     → Response validation and voice safety sanitizer
+     → Persist sanitized reply + ElevenLabs TTS → Base64 audio
 ```
 
-### CBT Tool Catalog
-
-The LLM can only invoke these pre-defined deterministic tools:
+### Deterministic Tool Catalog
 
 | Tool | Input | Output |
 |------|-------|--------|
-| `thought_reframing` | `negative_thought` | Structured cognitive restructuring exercise |
-| `grounding_exercise` | `exercise_type` | Step-by-step grounding technique (e.g., 5-4-3-2-1) |
-| `behavioral_activation` | `activity_type` | Evidence-based activity suggestions |
-| `mood_check` | `current_mood` | Mood tracking with validation |
-| `sleep_hygiene` | `issue_type` | Sleep hygiene recommendations |
+| `get_cbt_coping_technique` | `category` | Exact entries from the registered CBT strategy library |
+| `get_crisis_resources` | `region` | Deterministic crisis and emergency resources |
+| `get_user_session_context` | `user_id` | Recent owned session summaries for conversation context |
 
 ### Database Schema (Therapy)
 
 ```sql
-therapy_sessions (id, user_id, mode, objective, started_at, ended_at)
-therapy_messages (id, session_id, role, content, risk_tier, tools_used JSONB, timestamp)
-session_summaries (id, session_id, user_id, summary_text, concerns JSONB, goals JSONB, techniques_used JSONB, created_at)
+therapy_sessions (id, user_id, mode, started_at, ended_at, objective, session_state_columns)
+therapy_messages (id, session_id, role, content, risk_tier, created_at)
+session_summaries (id, session_id, user_id, summary_text, concerns, goals, techniques_used, created_at)
 ```
 
-### New Frontend Pages
-
-| Route | Description |
-|-------|-------------|
-| `/therapy/chat` | Chat therapy with session lifecycle, glassmorphic bubbles, tool badges, crisis banners |
-| `/therapy/voice` | Voice therapy with mic recording, breathing aura animation, emotion detection cards, TTS playback |
-| `/insights` (updated) | Added "Your Therapy Journey" section with session history timeline |
-
-### New Environment Variables
+### Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For therapy | Claude API key for tool-calling LLM |
-| `OPENAI_API_KEY` | For voice therapy | Whisper STT transcription |
-| `ELEVENLABS_API_KEY` | For voice therapy | TTS spoken responses |
-| `ELEVENLABS_VOICE_ID` | Optional | Voice ID (defaults to calm preset) |
+| `SUPABASE_URL` | For Supabase auth | Project URL used to derive issuer and JWKS location |
+| `SUPABASE_JWT_SECRET` | Legacy HS256 auth | Supabase JWT secret; never exposed to the frontend |
+| `SUPABASE_JWKS_URL` | Asymmetric auth | Optional explicit JWKS endpoint |
+| `GUEST_SESSION_SECRET` | For guest access | Independent random secret of at least 32 bytes |
+| `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | Optional providers | LLM provider credentials |
+| `ELEVENLABS_API_KEY` | For cloud TTS | Spoken voice responses |
+| `ELEVENLABS_VOICE_ID` | Optional | Voice selection |
 
-> **Note**: All therapy API keys are optional — the system gracefully degrades with mock responses when keys are absent.
+Provider keys are optional and use deterministic offline fallbacks where implemented. Authentication secrets have no insecure fallback.
 
-### Backend Files (New)
-
-| File | Purpose |
-|------|---------|
-| `backend/app/db.py` | Extended with therapy tables + CRUD (sessions, messages, summaries) |
-| `backend/app/therapy.py` | Safety interceptor + tool-calling LLM + session summarization |
-| `backend/app/engine/__init__.py` | Engine module init |
-| `backend/app/engine/llm_client.py` | Claude SDK + httpx fallback + 5 CBT tool definitions |
-| `backend/app/engine/stt_client.py` | Whisper STT + mock fallback |
-| `backend/app/engine/tts_client.py` | ElevenLabs TTS (calm preset) + graceful None fallback |
-| `backend/app/engine/voice_therapy.py` | Full voice pipeline orchestration |
-
-### Frontend Files (New/Modified)
+### Relevant Backend Files
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/types/api.ts` | Added 9 therapy TypeScript interfaces |
-| `frontend/src/lib/api.ts` | Added 6 therapy API client functions |
-| `frontend/src/app/therapy/chat/page.tsx` | Chat therapy page |
-| `frontend/src/app/therapy/voice/page.tsx` | Voice therapy page |
-| `frontend/src/app/globals.css` | Digital Sanctuary design system overhaul |
-| `frontend/src/components/Navigation.tsx` | Added therapy nav links + mobile menu |
-| `frontend/src/app/page.tsx` | Added therapy action cards to dashboard |
-| `frontend/src/app/insights/page.tsx` | Added therapy journey section |
-| `frontend/src/context/AuthContext.tsx` | Fixed prerender safety defaults |
+| `backend/app/auth.py` | JWT verification, guest tokens, and ownership helpers |
+| `backend/app/safety.py` | Shared crisis and acute-distress text signals |
+| `backend/app/db.py` | Therapy tables and CRUD |
+| `backend/app/therapy.py` | Chat safety gate, session progression, and summaries |
+| `backend/app/engine/llm_client.py` | Provider clients and deterministic tool calling |
+| `backend/app/engine/voice_therapy.py` | Voice orchestration and final response safety gate |
+| `frontend/src/lib/api.ts` | Bearer-token injection and verified user identity handling |
 
-### Test Results (35/35 passing)
-
-- Phase 1: 10 tests — DB CRUD, schema validation, JSONB deserialization
-- Phase 2: 12 tests — Safety interceptor, crisis protocol, CBT tool execution, zero hallucination
-- Phase 3: 13 tests — STT/TTS clients, voice pipeline, all 13 API endpoints validation
+The offline test suite in `tests/` covers route authentication and IDOR resistance, assessment and therapy behavior, feature extraction, multimodal fusion, text-risk recall, and voice-response safety.

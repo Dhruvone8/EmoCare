@@ -38,7 +38,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import Depends, FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -80,6 +80,8 @@ from .assessment import (
 )
 from .db import (
     init_db,
+    init_pg_pool,
+    close_pg_pool,
     create_therapy_session,
     end_therapy_session,
     save_therapy_message,
@@ -90,6 +92,13 @@ from .db import (
 )
 from .therapy import process_chat_turn, generate_session_summary
 from .engine.voice_therapy import process_voice_turn, generate_voice_greeting
+from .auth import (
+    AuthenticatedUser,
+    create_guest_token,
+    get_current_user,
+    require_session_ownership,
+    require_user_ownership,
+)
 
 
 # ── Logging ────────────────────────────────────────────────────────────
@@ -112,10 +121,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"Loading models from: {MODELS_ROOT}")
     models.load_all(MODELS_ROOT)
     init_db()
-    # Pre-warm connection pool in background for instant first voice turn
+    # Initialize PostgreSQL connection pool (no-op if SQLite/no PG)
+    init_pg_pool(minconn=1, maxconn=10)
+    # Pre-warm HTTP connection pool in background for instant first voice turn
     asyncio.create_task(warmup_connections())
     logger.info("EmoCare backend ready.")
     yield
+    close_pg_pool()
     await close_shared_client()
     logger.info("EmoCare backend shutting down.")
 
@@ -149,6 +161,12 @@ app.add_middleware(
 # ═══════════════════════════════════════════════════════════════════════
 # ROUTES
 # ═══════════════════════════════════════════════════════════════════════
+
+
+@app.post("/api/auth/guest")
+async def issue_guest_token():
+    """Issue a new server-generated identity for anonymous clinical sessions."""
+    return create_guest_token()
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -305,15 +323,19 @@ async def get_assessment_questions(test_type: str):
 
 
 @app.post("/api/assessment/submit", response_model=AssessmentResponse)
-async def submit_assessment(request: AssessmentSubmissionRequest):
+async def submit_assessment(
+    request: AssessmentSubmissionRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """
     Submit PHQ-9 or GAD-7 responses, calculate total score, map severity band & risk tier,
     evaluate clinical safety pathway, process contextual follow-up, persist attempt,
     and return evaluation summary with evidence-based next steps.
     """
+    user_id = require_user_ownership(request.user_id, current_user)
     try:
         result = await process_assessment_async(
-            user_id=request.user_id,
+            user_id=user_id,
             test_type=request.test_type,
             responses=request.responses,
             follow_up_data=request.follow_up_data,
@@ -328,10 +350,13 @@ async def submit_assessment(request: AssessmentSubmissionRequest):
 
 
 @app.get("/api/assessment/history/{user_id}", response_model=AssessmentHistoryResponse)
-async def get_assessment_history(user_id: str, limit: int = 20):
-    """
-    Retrieve user's historical self-assessment attempts for longitudinal progress tracking.
-    """
+async def get_assessment_history(
+    user_id: str,
+    limit: int = 20,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Retrieve the authenticated user's assessment history."""
+    user_id = require_user_ownership(user_id, current_user)
     try:
         items = get_user_assessment_history(user_id=user_id, limit=limit)
         history_models = [AssessmentHistoryItem(**item) for item in items]
@@ -351,31 +376,28 @@ async def get_assessment_history(user_id: str, limit: int = 20):
 
 
 @app.post("/api/therapy/session/start", response_model=StartSessionResponse)
-async def start_therapy_session(request: StartSessionRequest):
-    """
-    Start a new therapy session (chat or voice).
-
-    Returns session ID and a clean welcoming message.
-    Isolates guest sessions to avoid cross-session bleed.
-    """
+async def start_therapy_session(
+    request: StartSessionRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Start an owned chat or voice therapy session."""
+    user_id = require_user_ownership(request.user_id, current_user)
     session_id = create_therapy_session(
-        user_id=request.user_id,
+        user_id=user_id,
         mode=request.mode,
         objective=request.objective,
     )
     if session_id is None:
         raise HTTPException(status_code=500, detail="Failed to create therapy session")
 
-    # Load prior session summaries ONLY for registered users (avoid guest test bleed)
     prior_summaries = []
-    if not request.user_id.startswith("guest_"):
-        prior_summaries = get_recent_session_summaries(request.user_id, limit=3)
+    if not user_id.startswith("guest_"):
+        prior_summaries = get_recent_session_summaries(user_id, limit=3)
 
     welcome_msg = (
         "Hi, it's good to have you here. What's been on your mind lately? "
         "We can take our time with whatever feels important to you today."
     )
-    # Persist the initial opening greeting in messages so DB and UI match
     save_therapy_message(session_id, "assistant", welcome_msg)
 
     from datetime import datetime, timezone
@@ -391,41 +413,43 @@ async def start_therapy_session(request: StartSessionRequest):
 
 
 @app.post("/api/therapy/session/end", response_model=SessionSummaryResponse)
-async def end_therapy_session_route(request: EndSessionRequest):
-    """
-    End a therapy session: mark as ended, generate structured summary,
-    and persist it to session_summaries for future memory context.
-    """
-    # Mark session as ended
+async def end_therapy_session_route(
+    request: EndSessionRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """End an owned session and generate its structured summary."""
+    user_id = require_user_ownership(request.user_id, current_user)
+    require_session_ownership(request.session_id, current_user)
     ended = end_therapy_session(request.session_id)
     if not ended:
         raise HTTPException(status_code=500, detail="Failed to end therapy session")
 
-    # Generate and persist summary
     summary = await generate_session_summary(
         session_id=request.session_id,
-        user_id=request.user_id,
+        user_id=user_id,
     )
 
     return SessionSummaryResponse(**summary)
 
 
 @app.get("/api/therapy/sessions/{user_id}", response_model=UserSessionListResponse)
-async def list_user_sessions(user_id: str):
-    """
-    List all therapy sessions for a user (with summaries if available).
-    Used by the /insights page to display session history.
-    """
+async def list_user_sessions(
+    user_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """List the authenticated user's therapy sessions."""
+    user_id = require_user_ownership(user_id, current_user)
     sessions = get_all_user_sessions(user_id)
     return UserSessionListResponse(sessions=sessions)
 
 
 @app.get("/api/therapy/session/{session_id}/messages")
-async def get_session_messages_route(session_id: int):
-    """
-    Retrieve all messages for a specific therapy session.
-    Returns messages in chronological order.
-    """
+async def get_session_messages_route(
+    session_id: int,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Retrieve messages only from a session owned by the authenticated user."""
+    require_session_ownership(session_id, current_user)
     messages = get_session_messages(session_id)
     return {"session_id": session_id, "messages": messages}
 
@@ -436,18 +460,16 @@ async def get_session_messages_route(session_id: int):
 
 
 @app.post("/api/chat/message", response_model=ChatMessageResponse)
-async def chat_therapy_message(request: ChatMessageRequest):
-    """
-    Process a single chat therapy turn.
-
-    Safety pipeline:
-    1. Classifies user text for risk BEFORE the LLM sees it
-    2. If High/Critical → bypasses LLM, returns deterministic crisis protocol
-    3. Otherwise → invokes LLM with tool-calling access to CBT catalog
-    """
+async def chat_therapy_message(
+    request: ChatMessageRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Process a chat turn only within the authenticated user's session."""
+    user_id = require_user_ownership(request.user_id, current_user)
+    require_session_ownership(request.session_id, current_user)
     result = await process_chat_turn(
         session_id=request.session_id,
-        user_id=request.user_id,
+        user_id=user_id,
         user_message=request.message,
         mode="chat",
     )
@@ -475,18 +497,11 @@ async def voice_therapy_interact(
     session_id: int = Form(...),
     user_id: str = Form(...),
     audio: UploadFile = File(...),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """
-    Full voice therapy pipeline:
-
-    1. Receives audio from the user
-    2. Parallel processing: Whisper STT + SER acoustic emotion analysis
-    3. Text risk classification on transcript
-    4. Multimodal safety gate (acoustic OR text risk High → crisis protocol)
-    5. Voice-mode LLM response (no markdown, spoken cadence)
-    6. ElevenLabs TTS on reply → base64 audio
-    """
-    # Read and validate audio
+    """Process a voice turn only within the authenticated user's session."""
+    user_id = require_user_ownership(user_id, current_user)
+    require_session_ownership(session_id, current_user)
     audio_bytes = await audio.read()
     if len(audio_bytes) == 0:
         raise HTTPException(status_code=400, detail="Empty audio file")
@@ -520,13 +535,16 @@ class VoiceGreetingRequest(BaseModel):
 
 
 @app.post("/api/voice-therapy/greeting")
-async def voice_therapy_greeting(request: VoiceGreetingRequest):
-    """
-    Generate proactive opening therapist greeting with TTS audio when a voice session starts.
-    """
+async def voice_therapy_greeting(
+    request: VoiceGreetingRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Generate a greeting only within the authenticated user's session."""
+    user_id = require_user_ownership(request.user_id, current_user)
+    require_session_ownership(request.session_id, current_user)
     return await generate_voice_greeting(
         session_id=request.session_id,
-        user_id=request.user_id,
+        user_id=user_id,
         time_of_day=request.time_of_day,
     )
 

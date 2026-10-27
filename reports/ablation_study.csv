@@ -1,5 +1,5 @@
-Configuration,Accuracy,Macro F1,High-Risk Recall,Modality Type
-Text-Only (DepSeverity TF-IDF LogReg),0.7453,0.4805,0.2619,Single Modality
-Speech-Only (MFCC XGBoost),0.507,0.4807,0.7439024390243902,Single Modality
-Behavioral-Only (StudentLife RF),0.82,0.785,0.85,Single Modality
-Multimodal Late Fusion (Text + Speech + Behavioral),1.0,1.0,1.0,Multimodal Fused
+Configuration,Accuracy,Macro F1,High-Risk Recall,Modality Type,Status
+Text-Only (DepSeverity TF-IDF LogReg),0.7453,0.4805,0.2619,Single Modality,Baseline argmax metrics before asymmetric decision calibration
+Speech-Only (RAVDESS + CREMA-D MFCC XGBoost),0.507,0.4807,0.7439024390243902,Single Modality,Documented single-modality baseline
+Behavioral-Only (StudentLife RF research artifact; inactive),0.82,0.785,0.85,Single Modality,Research artifact only; not used by the active behavioral survey
+Multimodal Late Fusion (synthetic simulation; retracted),,,,Multimodal Fused,Preliminary synthetic simulation only. The previous 1.0 metrics are retracted and are not empirical validation.

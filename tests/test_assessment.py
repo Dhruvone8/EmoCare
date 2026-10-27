@@ -14,6 +14,7 @@ Covers:
 """
 import pytest
 from datetime import datetime, timezone
+from auth_helpers import auth_headers
 
 from backend.app.assessment import (
     score_phq9,
@@ -489,7 +490,11 @@ def test_fastapi_assessment_routes():
             "duration": "2 weeks to 1 month",
         },
     }
-    submit_res = client.post("/api/assessment/submit", json=payload)
+    submit_res = client.post(
+        "/api/assessment/submit",
+        json=payload,
+        headers=auth_headers(test_user),
+    )
     assert submit_res.status_code == 200
     submit_data = submit_res.json()
     assert submit_data["total_score"] == 5
@@ -509,7 +514,11 @@ def test_fastapi_assessment_routes():
             "safe_person_nearby": True,
         },
     }
-    safety_res = client.post("/api/assessment/submit", json=safety_payload)
+    safety_res = client.post(
+        "/api/assessment/submit",
+        json=safety_payload,
+        headers=auth_headers(test_user),
+    )
     assert safety_res.status_code == 200
     safety_data = safety_res.json()
     assert safety_data["safety_alert"] is True
@@ -517,7 +526,10 @@ def test_fastapi_assessment_routes():
     assert len(safety_data["safety_details"]["crisis_resources"]) > 0
 
     # 4. History Endpoint
-    hist_res = client.get(f"/api/assessment/history/{test_user}")
+    hist_res = client.get(
+        f"/api/assessment/history/{test_user}",
+        headers=auth_headers(test_user),
+    )
     assert hist_res.status_code == 200
     hist_data = hist_res.json()
     assert hist_data["count"] >= 2

@@ -1,44 +1,15 @@
 {
-  "fusion_model": "XGBoost Meta-Classifier (Late Decision Fusion)",
+  "fusion_model": "Saved XGBoost meta-classifier research artifact",
+  "active_inference": "Rule-based weighted late fusion over available modalities in backend/app/inference.py",
   "modalities": [
-    "Text (Bio_ClinicalBERT/TF-IDF)",
-    "Speech (MFCC XGBoost)",
-    "Behavioral (StudentLife RF)"
+    "Text (TF-IDF N-gram Logistic Regression Classifier)",
+    "Speech (RAVDESS + CREMA-D MFCC XGBoost)",
+    "Behavioral (calibrated self-report survey; StudentLife model inactive)"
   ],
-  "test_accuracy": 1.0,
-  "test_f1_macro": 1.0,
-  "high_risk_recall": 1.0,
-  "classification_report": {
-    "Low": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 178.0
-    },
-    "Moderate": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 41.0
-    },
-    "High": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 31.0
-    },
-    "accuracy": 1.0,
-    "macro avg": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 250.0
-    },
-    "weighted avg": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 250.0
-    }
-  }
+  "synthetic_benchmark_status": "retracted",
+  "retraction_reason": "The previous perfect scores came from a preliminary synthetic simulation, not an independent empirical multimodal benchmark. They must not be reported as validated performance.",
+  "test_accuracy": null,
+  "test_f1_macro": null,
+  "high_risk_recall": null,
+  "classification_report": null
 }

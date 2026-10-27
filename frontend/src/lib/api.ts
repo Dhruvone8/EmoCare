@@ -30,8 +30,10 @@ import type {
   UserSessionListResponse,
   VoiceTherapyResponse,
 } from "@/types/api";
+import { supabase } from "@/lib/supabase";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const GUEST_STORAGE_KEY = "emocare_guest_session";
 
 // ── Generic fetch helper ─────────────────────────────────────────────
 
@@ -46,16 +48,131 @@ class ApiError extends Error {
   }
 }
 
+interface GuestSession {
+  access_token: string;
+  token_type: "bearer";
+  user_id: string;
+  expires_at: number;
+}
+
+interface ApiIdentity {
+  accessToken: string;
+  userId: string;
+  isGuest: boolean;
+}
+
+let cachedGuestSession: GuestSession | null = null;
+let guestSessionPromise: Promise<GuestSession> | null = null;
+
+function isUsableGuestSession(value: unknown): value is GuestSession {
+  if (!value || typeof value !== "object") return false;
+  const session = value as Partial<GuestSession>;
+  return (
+    typeof session.access_token === "string" &&
+    typeof session.user_id === "string" &&
+    session.user_id.startsWith("guest_") &&
+    typeof session.expires_at === "number" &&
+    session.expires_at > Math.floor(Date.now() / 1000) + 30
+  );
+}
+
+function clearGuestSession() {
+  cachedGuestSession = null;
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(GUEST_STORAGE_KEY);
+  }
+}
+
+async function issueGuestSession(): Promise<GuestSession> {
+  const res = await fetch(`${API_BASE}/api/auth/guest`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new ApiError(res.status, body.detail || res.statusText);
+  }
+
+  const session: unknown = await res.json();
+  if (!isUsableGuestSession(session)) {
+    throw new ApiError(500, "Backend returned an invalid guest session");
+  }
+
+  cachedGuestSession = session;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(session));
+  }
+  return session;
+}
+
+async function getGuestSession(): Promise<GuestSession> {
+  if (isUsableGuestSession(cachedGuestSession)) {
+    return cachedGuestSession;
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      const stored: unknown = JSON.parse(
+        window.localStorage.getItem(GUEST_STORAGE_KEY) || "null"
+      );
+      if (isUsableGuestSession(stored)) {
+        cachedGuestSession = stored;
+        return stored;
+      }
+    } catch {
+      clearGuestSession();
+    }
+  }
+
+  if (!guestSessionPromise) {
+    guestSessionPromise = issueGuestSession().finally(() => {
+      guestSessionPromise = null;
+    });
+  }
+  return guestSessionPromise;
+}
+
+async function getApiIdentity(): Promise<ApiIdentity> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (session?.access_token && session.user?.id) {
+    return {
+      accessToken: session.access_token,
+      userId: session.user.id,
+      isGuest: false,
+    };
+  }
+
+  const guest = await getGuestSession();
+  return {
+    accessToken: guest.access_token,
+    userId: guest.user_id,
+    isGuest: true,
+  };
+}
+
+async function getAuthenticatedUserId(): Promise<string> {
+  const identity = await getApiIdentity();
+  return identity.userId;
+}
+
 async function apiFetch<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retryGuest = true
 ): Promise<T> {
+  const identity = await getApiIdentity();
+  const headers = new Headers(options.headers);
+  headers.set("Authorization", `Bearer ${identity.accessToken}`);
+
   const res = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
-    headers: {
-      ...options.headers,
-    },
+    headers,
   });
+
+  if (res.status === 401 && identity.isGuest && retryGuest) {
+    clearGuestSession();
+    return apiFetch<T>(endpoint, options, false);
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
@@ -151,17 +268,19 @@ export async function predictMultimodal(
 export async function submitAssessment(
   data: AssessmentSubmissionRequest
 ): Promise<AssessmentResponse> {
+  const userId = await getAuthenticatedUserId();
   return apiFetch<AssessmentResponse>("/api/assessment/submit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ ...data, user_id: userId }),
   });
 }
 
 export async function getAssessmentHistory(
-  userId: string,
+  _userId: string,
   limit: number = 20
 ): Promise<AssessmentHistoryResponse> {
+  const userId = await getAuthenticatedUserId();
   return apiFetch<AssessmentHistoryResponse>(
     `/api/assessment/history/${encodeURIComponent(userId)}?limit=${limit}`
   );
@@ -179,26 +298,30 @@ export { ApiError };
 export async function startSession(
   data: StartSessionRequest
 ): Promise<StartSessionResponse> {
+  const userId = await getAuthenticatedUserId();
   return apiFetch<StartSessionResponse>("/api/therapy/session/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ ...data, user_id: userId }),
   });
 }
 
 export async function endSession(
   data: EndSessionRequest
 ): Promise<SessionSummaryResponse> {
+  const userId = await getAuthenticatedUserId();
   return apiFetch<SessionSummaryResponse>("/api/therapy/session/end", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ ...data, user_id: userId }),
   });
 }
 
 export async function getUserSessions(
-  userId: string
+  _userId: string
 ): Promise<UserSessionListResponse> {
+  void _userId;
+  const userId = await getAuthenticatedUserId();
   return apiFetch<UserSessionListResponse>(
     `/api/therapy/sessions/${encodeURIComponent(userId)}`
   );
@@ -215,10 +338,11 @@ export async function getSessionMessages(
 export async function sendChatMessage(
   data: ChatMessageRequest
 ): Promise<ChatMessageResponse> {
+  const userId = await getAuthenticatedUserId();
   return apiFetch<ChatMessageResponse>("/api/chat/message", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ ...data, user_id: userId }),
   });
 }
 
@@ -232,9 +356,10 @@ export interface VoiceGreetingResponse {
 
 export async function getVoiceGreeting(
   sessionId: number,
-  userId: string,
+  _userId: string,
   timeOfDay?: string
 ): Promise<VoiceGreetingResponse> {
+  const userId = await getAuthenticatedUserId();
   return apiFetch<VoiceGreetingResponse>("/api/voice-therapy/greeting", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -248,9 +373,10 @@ export async function getVoiceGreeting(
 
 export async function sendVoiceTherapy(
   sessionId: number,
-  userId: string,
+  _userId: string,
   audioBlob: Blob
 ): Promise<VoiceTherapyResponse> {
+  const userId = await getAuthenticatedUserId();
   const formData = new FormData();
   formData.append("session_id", String(sessionId));
   formData.append("user_id", userId);

@@ -4,27 +4,31 @@
     "Accuracy": 0.7453,
     "Macro F1": 0.4805,
     "High-Risk Recall": 0.2619,
-    "Modality Type": "Single Modality"
+    "Modality Type": "Single Modality",
+    "Status": "Baseline argmax metrics before asymmetric decision calibration"
   },
   {
-    "Configuration": "Speech-Only (MFCC XGBoost)",
+    "Configuration": "Speech-Only (RAVDESS + CREMA-D MFCC XGBoost)",
     "Accuracy": 0.507,
     "Macro F1": 0.4807,
     "High-Risk Recall": 0.7439024390243902,
-    "Modality Type": "Single Modality"
+    "Modality Type": "Single Modality",
+    "Status": "Documented single-modality baseline"
   },
   {
-    "Configuration": "Behavioral-Only (StudentLife RF)",
+    "Configuration": "Behavioral-Only (StudentLife RF research artifact; inactive)",
     "Accuracy": 0.82,
     "Macro F1": 0.785,
     "High-Risk Recall": 0.85,
-    "Modality Type": "Single Modality"
+    "Modality Type": "Single Modality",
+    "Status": "Research artifact only; not used by the active behavioral survey"
   },
   {
-    "Configuration": "Multimodal Late Fusion (Text + Speech + Behavioral)",
-    "Accuracy": 1.0,
-    "Macro F1": 1.0,
-    "High-Risk Recall": 1.0,
-    "Modality Type": "Multimodal Fused"
+    "Configuration": "Multimodal Late Fusion (synthetic simulation; retracted)",
+    "Accuracy": null,
+    "Macro F1": null,
+    "High-Risk Recall": null,
+    "Modality Type": "Multimodal Fused",
+    "Status": "Preliminary synthetic simulation only. The previous 1.0 metrics are retracted and are not empirical validation."
   }
 ]

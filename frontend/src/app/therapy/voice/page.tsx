@@ -349,7 +349,7 @@ export default function VoiceTherapyPage() {
   }, [resumeListening, sendTurnToBackend]);
 
   /* ── Start Local Audio & VAD Pipeline ─────────────────────────────── */
-  const startAudioPipeline = async () => {
+  const startAudioPipeline = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -461,7 +461,7 @@ export default function VoiceTherapyPage() {
     } catch {
       setError("Microphone access is needed for Voice Therapy. Please check browser permissions.");
     }
-  };
+  }, [finalizeUserTurn, highSensitivity]);
 
   /* ── Teardown Audio Pipeline ──────────────────────────────────────── */
   const teardownAudioPipeline = () => {
@@ -553,7 +553,7 @@ export default function VoiceTherapyPage() {
     } finally {
       setSessionStarting(false);
     }
-  }, [userId, playEmoCareResponse, resumeListening]);
+  }, [userId, playEmoCareResponse, resumeListening, startAudioPipeline]);
 
   /* ── End Therapy Session ──────────────────────────────────────────── */
   const handleEndSession = async () => {

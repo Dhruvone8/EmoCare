@@ -30,11 +30,16 @@ from .schemas import (
     ModalityBreakdown,
 )
 from .recommendations import get_coping_recommendations
+from .safety import has_acute_distress_signal
 
 logger = logging.getLogger("emocare.inference")
 
 LABEL_MAP = {0: "Low", 1: "Moderate", 2: "High"}
 RISK_TO_IDX = {"Low": 0, "Moderate": 1, "High": 2}
+URGENCY_RANK = {"STABLE": 0, "WARNING": 1, "CRITICAL": 2}
+RANK_TO_URGENCY = {0: "STABLE", 1: "WARNING", 2: "CRITICAL"}
+HIGH_RISK_THRESHOLD = 0.20
+MODERATE_RISK_THRESHOLD = 0.35
 
 # ── Linguistic marker word lists (DSM-5 / clinical NLP literature) ─────
 FIRST_PERSON_PRONOUNS = {"i", "me", "my", "mine", "myself", "we", "us", "our", "ours"}
@@ -67,8 +72,41 @@ def _extract_linguistic_markers(text: str) -> LinguisticMarkers:
     )
 
 
+def _ordered_text_probabilities(raw_probs: np.ndarray) -> np.ndarray:
+    if len(raw_probs) != 3:
+        raise ValueError("Text classifier must output probabilities for three risk tiers")
+
+    classes = getattr(models.text_clf, "classes_", None)
+    if classes is None:
+        return np.asarray(raw_probs, dtype=float)
+
+    ordered: dict[str, float] = {}
+    for index, label in enumerate(classes):
+        if isinstance(label, (int, np.integer)):
+            tier = LABEL_MAP.get(int(label))
+        else:
+            label_text = str(label)
+            tier = LABEL_MAP.get(int(label_text)) if label_text.isdigit() else label_text.title()
+        if tier in RISK_TO_IDX:
+            ordered[tier] = float(raw_probs[index])
+
+    if len(ordered) != 3:
+        logger.warning("Unrecognized text classifier classes; using positional risk probabilities")
+        return np.asarray(raw_probs, dtype=float)
+    return np.array([ordered["Low"], ordered["Moderate"], ordered["High"]])
+
+
+def _select_text_risk_tier(text: str, probs: np.ndarray) -> str:
+    p_low, p_mod, p_high = (float(value) for value in probs)
+    if p_high >= HIGH_RISK_THRESHOLD or has_acute_distress_signal(text):
+        return "High"
+    if p_mod >= MODERATE_RISK_THRESHOLD or (p_high + p_mod) >= 0.50:
+        return "Moderate"
+    return "Low"
+
+
 def predict_text(text: str) -> TextResponse:
-    """Run TF-IDF risk classification + linguistic marker extraction on input text."""
+    """Run calibrated TF-IDF risk classification and linguistic marker extraction."""
     if models.tfidf_vectorizer is None or models.text_clf is None:
         models_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "models"))
         if os.path.exists(models_root):
@@ -76,21 +114,21 @@ def predict_text(text: str) -> TextResponse:
 
     if models.tfidf_vectorizer is not None and models.text_clf is not None:
         feat = models.tfidf_vectorizer.transform([text])
-        probs = models.text_clf.predict_proba(feat)[0]
-        pred_idx = int(np.argmax(probs))
-        confidence = float(np.max(probs))
+        raw_probs = models.text_clf.predict_proba(feat)[0]
+        probs = _ordered_text_probabilities(raw_probs)
+    else:
+        probs = np.array([0.9, 0.08, 0.02])
 
-        return TextResponse(
-            predicted_risk_tier=LABEL_MAP[pred_idx],
-            probabilities=RiskProbabilities(Low=float(probs[0]), Moderate=float(probs[1]), High=float(probs[2])),
-            confidence=round(confidence, 4),
-            linguistic_markers=_extract_linguistic_markers(text),
-        )
-
+    predicted_tier = _select_text_risk_tier(text, probs)
+    confidence = float(probs[RISK_TO_IDX[predicted_tier]])
     return TextResponse(
-        predicted_risk_tier="Low",
-        probabilities=RiskProbabilities(Low=0.9, Moderate=0.08, High=0.02),
-        confidence=0.9,
+        predicted_risk_tier=predicted_tier,
+        probabilities=RiskProbabilities(
+            Low=float(probs[0]),
+            Moderate=float(probs[1]),
+            High=float(probs[2]),
+        ),
+        confidence=round(confidence, 4),
         linguistic_markers=_extract_linguistic_markers(text),
     )
 
@@ -136,43 +174,88 @@ def _load_audio_waveform(audio_bytes: bytes, max_duration: float = 5.0) -> tuple
             pass
 
 
-def _extract_mfcc_features(y: np.ndarray, sr: int = 22050) -> dict[str, float]:
-    """Extract MFCC/spectral features from preloaded audio waveform."""
-    features = {}
+def _extract_speech_features(y: np.ndarray, sr: int = 22050) -> dict[str, float]:
+    """
+    Extract all 95 acoustic features matching the trained speech emotion model.
 
-    # MFCCs (13 coefficients x 2 stats = 26 features)
-    mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-    for i in range(13):
+    Feature breakdown (must match models.speech_feature_columns exactly):
+      - mfcc_0_mean..mfcc_39_std  : 40 MFCCs × 2 stats = 80 features
+      - pitch_mean, pitch_std, pitch_range : 3 features
+      - rms_mean, rms_std                 : 2 features
+      - zcr_mean, zcr_std                 : 2 features
+      - spectral_centroid_mean/std        : 2 features
+      - spectral_bandwidth_mean           : 1 feature
+      - spectral_rolloff_mean             : 1 feature
+      - chroma_mean, chroma_std           : 2 features (aggregated across all 12 bands)
+      - duration_s                        : 1 feature
+      - pause_ratio                       : 1 feature
+                                    Total = 95 features
+    """
+    features: dict[str, float] = {}
+
+    # ── 40 MFCCs (mean + std each) ──
+    mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=40)
+    for i in range(40):
         features[f"mfcc_{i}_mean"] = float(np.mean(mfccs[i]))
         features[f"mfcc_{i}_std"] = float(np.std(mfccs[i]))
 
-    # Delta MFCCs (13 x 2 = 26 features)
-    delta_mfccs = librosa.feature.delta(mfccs)
-    for i in range(13):
-        features[f"delta_mfcc_{i}_mean"] = float(np.mean(delta_mfccs[i]))
-        features[f"delta_mfcc_{i}_std"] = float(np.std(delta_mfccs[i]))
+    # ── Pitch (F0 via YIN) ──
+    try:
+        f0 = librosa.yin(y, fmin=65, fmax=2093, sr=sr)
+        f0_valid = f0[~np.isnan(f0)]
+        if len(f0_valid) > 0:
+            features["pitch_mean"] = float(np.mean(f0_valid))
+            features["pitch_std"] = float(np.std(f0_valid))
+            features["pitch_range"] = float(np.max(f0_valid) - np.min(f0_valid))
+        else:
+            features["pitch_mean"] = 0.0
+            features["pitch_std"] = 0.0
+            features["pitch_range"] = 0.0
+    except Exception:
+        features["pitch_mean"] = 0.0
+        features["pitch_std"] = 0.0
+        features["pitch_range"] = 0.0
 
-    # Chroma (12 x 2 = 24 features)
-    chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-    for i in range(12):
-        features[f"chroma_{i}_mean"] = float(np.mean(chroma[i]))
-        features[f"chroma_{i}_std"] = float(np.std(chroma[i]))
+    # ── RMS Energy ──
+    rms = librosa.feature.rms(y=y)[0]
+    features["rms_mean"] = float(np.mean(rms))
+    features["rms_std"] = float(np.std(rms))
 
-    # Spectral contrast (7x2 = 14 features)
-    spec_contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
-    for i in range(spec_contrast.shape[0]):
-        features[f"spectral_contrast_{i}_mean"] = float(np.mean(spec_contrast[i]))
-        features[f"spectral_contrast_{i}_std"] = float(np.std(spec_contrast[i]))
-
-    # ZCR
-    zcr = librosa.feature.zero_crossing_rate(y)
+    # ── Zero Crossing Rate ──
+    zcr = librosa.feature.zero_crossing_rate(y)[0]
     features["zcr_mean"] = float(np.mean(zcr))
+    features["zcr_std"] = float(np.std(zcr))
+
+    # ── Spectral Centroid ──
+    centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+    features["spectral_centroid_mean"] = float(np.mean(centroid))
+    features["spectral_centroid_std"] = float(np.std(centroid))
+
+    # ── Spectral Bandwidth ──
+    bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)[0]
+    features["spectral_bandwidth_mean"] = float(np.mean(bandwidth))
+
+    # ── Spectral Rolloff ──
+    rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
+    features["spectral_rolloff_mean"] = float(np.mean(rolloff))
+
+    # ── Chroma (aggregated across all 12 bands) ──
+    chroma = librosa.feature.chroma_stft(y=y, sr=sr)
+    features["chroma_mean"] = float(np.mean(chroma))
+    features["chroma_std"] = float(np.std(chroma))
+
+    # ── Duration ──
+    features["duration_s"] = float(len(y) / max(sr, 1))
+
+    # ── Pause Ratio (fraction of silent frames) ──
+    silence_threshold = 0.01
+    features["pause_ratio"] = float(np.mean(rms < silence_threshold))
 
     return features
 
 
 def _extract_prosodic_features(y: np.ndarray, sr: int = 22050) -> dict[str, float]:
-    """Extract fast prosodic features: pitch variance, speech rate proxy, pause ratio."""
+    """Extract fast prosodic features for voice therapy display (not used in model prediction)."""
     # Fast pitch via autocorrelation/yin
     try:
         f0 = librosa.yin(y, fmin=65, fmax=2093, sr=sr)
@@ -223,7 +306,7 @@ def predict_speech(audio_bytes: bytes, include_prosodic: bool = True) -> SpeechR
     y, sr = _load_audio_waveform(audio_bytes, max_duration=5.0)
 
     # Extract features from decoded audio
-    raw_features = _extract_mfcc_features(y, sr)
+    raw_features = _extract_speech_features(y, sr)
 
     # Align to training feature columns
     feature_cols = models.speech_feature_columns
@@ -287,28 +370,72 @@ def predict_speech(audio_bytes: bytes, include_prosodic: bool = True) -> SpeechR
 # ═══════════════════════════════════════════════════════════════════════
 
 def predict_behavioral(req: BehavioralRequest) -> BehavioralResponse:
-    """Predict risk tier from self-reported behavioral metrics."""
-    # Build feature vector matching StudentLife behavioral feature order
-    feature_values = [
-        req.sleep_hours or 7.0,
-        req.sleep_quality or 3.0,
-        req.activity_level or 3.0,
-        req.social_interaction or 3.0,
-        req.stress_level or 3.0,
-        req.exercise_minutes or 30.0,
-        req.mood_rating or 3.0,
-    ]
-    # Pad to match training feature count if needed
-    clf = models.behavioral_clf
-    expected_features = clf.n_features_in_
-    while len(feature_values) < expected_features:
-        feature_values.append(0.0)
+    """
+    Predict risk tier from self-reported behavioral metrics.
 
-    X = np.array([feature_values[:expected_features]])
-    X = models.behavioral_imputer.transform(X)
-    X = models.behavioral_scaler.transform(X)
+    Uses a calibrated lifestyle distress index instead of zero-padding
+    into the 50-feature StudentLife sensor model. Each survey dimension
+    is mapped to a 0-1 distress contribution, then aggregated into
+    softmax-normalized risk probabilities.
+    """
+    # Extract values with neutral defaults
+    sleep_hours = req.sleep_hours if req.sleep_hours is not None else 7.0
+    sleep_quality = req.sleep_quality if req.sleep_quality is not None else 3.0
+    activity_level = req.activity_level if req.activity_level is not None else 3.0
+    social_interaction = req.social_interaction if req.social_interaction is not None else 3.0
+    stress_level = req.stress_level if req.stress_level is not None else 3.0
+    exercise_minutes = req.exercise_minutes if req.exercise_minutes is not None else 30.0
+    mood_rating = req.mood_rating if req.mood_rating is not None else 3.0
 
-    probs = clf.predict_proba(X)[0]
+    # ── Compute individual distress contributions (each 0.0 – 1.0) ──
+    # Sleep deficit: less sleep → higher distress (7h baseline, 3h floor)
+    sleep_deficit = np.clip((7.0 - sleep_hours) / 4.0, 0.0, 1.0)
+    # Sleep quality: lower quality → higher distress
+    sleep_quality_distress = np.clip((5.0 - sleep_quality) / 4.0, 0.0, 1.0)
+    # Stress: higher → worse
+    stress_distress = np.clip((stress_level - 1.0) / 4.0, 0.0, 1.0)
+    # Mood: lower → worse
+    mood_distress = np.clip((5.0 - mood_rating) / 4.0, 0.0, 1.0)
+    # Social isolation: lower interaction → worse
+    social_distress = np.clip((5.0 - social_interaction) / 4.0, 0.0, 1.0)
+    # Activity: lower → worse
+    activity_distress = np.clip((5.0 - activity_level) / 4.0, 0.0, 1.0)
+    # Exercise: less than 20min → increasing distress
+    exercise_distress = np.clip((20.0 - min(exercise_minutes, 60.0)) / 20.0, 0.0, 1.0)
+
+    # ── Weighted aggregate distress score ──
+    # Weights reflect clinical significance (stress and mood most predictive)
+    weights = {
+        "stress": 0.25,
+        "mood": 0.20,
+        "sleep_deficit": 0.15,
+        "sleep_quality": 0.10,
+        "social": 0.12,
+        "activity": 0.08,
+        "exercise": 0.10,
+    }
+    distress_score = (
+        weights["stress"] * stress_distress
+        + weights["mood"] * mood_distress
+        + weights["sleep_deficit"] * sleep_deficit
+        + weights["sleep_quality"] * sleep_quality_distress
+        + weights["social"] * social_distress
+        + weights["activity"] * activity_distress
+        + weights["exercise"] * exercise_distress
+    )
+
+    # ── Map to risk probabilities via softmax-like transformation ──
+    # Scale distress_score (0-1) into logits for [Low, Moderate, High]
+    # At distress=0: strongly Low; at distress=1: strongly High
+    temperature = 3.0
+    logits = np.array([
+        temperature * (1.0 - distress_score),   # Low logit
+        temperature * 0.5,                       # Moderate baseline
+        temperature * distress_score,            # High logit
+    ])
+    exp_logits = np.exp(logits - np.max(logits))  # numerical stability
+    probs = exp_logits / exp_logits.sum()
+
     pred_idx = int(np.argmax(probs))
 
     return BehavioralResponse(
@@ -345,18 +472,24 @@ def predict_multimodal(
     behavioral: Optional[BehavioralRequest] = None,
 ) -> MultimodalResponse:
     """
-    Run all available modalities, fuse via late decision-level meta-classifier,
-    check cross-modal agreement, and generate escalation + coping output.
+    Run all available modalities, fuse via weighted late fusion across
+    only the modalities that are present, check cross-modal agreement,
+    and generate escalation + coping output.
+
+    Modality weights (normalized across available inputs):
+      - Text:       0.45 (most clinically predictive for distress screening)
+      - Speech:     0.35 (prosodic/emotional cues)
+      - Behavioral: 0.20 (self-reported lifestyle survey)
     """
     text_result: Optional[TextResponse] = None
     speech_result: Optional[SpeechResponse] = None
     behavioral_result: Optional[BehavioralResponse] = None
 
-    # Default probability vectors (uniform prior when modality unavailable)
-    text_probs = np.array([1 / 3, 1 / 3, 1 / 3])
-    speech_probs = np.array([1 / 3, 1 / 3, 1 / 3])
-    behavioral_probs = np.array([1 / 3, 1 / 3, 1 / 3])
+    # Canonical modality weights (will be normalized across available modalities)
+    MODALITY_WEIGHTS = {"text": 0.45, "speech": 0.35, "behavioral": 0.20}
 
+    # Collect probability vectors and weights only from available modalities
+    available_probs: list[tuple[str, np.ndarray, float]] = []
     modality_tiers: list[str] = []
     detected_emotion: Optional[str] = None
 
@@ -365,29 +498,37 @@ def predict_multimodal(
         text_result = predict_text(text)
         p = text_result.probabilities
         text_probs = np.array([p.Low, p.Moderate, p.High])
+        available_probs.append(("text", text_probs, MODALITY_WEIGHTS["text"]))
         modality_tiers.append(text_result.predicted_risk_tier)
 
     if audio_bytes and models.speech_clf is not None:
         speech_result = predict_speech(audio_bytes)
         p = speech_result.probabilities
         speech_probs = np.array([p.Low, p.Moderate, p.High])
+        available_probs.append(("speech", speech_probs, MODALITY_WEIGHTS["speech"]))
         modality_tiers.append(speech_result.predicted_risk_tier)
         detected_emotion = speech_result.emotion_detail.detected_emotion
 
-    if behavioral and models.behavioral_clf is not None:
+    if behavioral:
         behavioral_result = predict_behavioral(behavioral)
         p = behavioral_result.probabilities
         behavioral_probs = np.array([p.Low, p.Moderate, p.High])
+        available_probs.append(("behavioral", behavioral_probs, MODALITY_WEIGHTS["behavioral"]))
         modality_tiers.append(behavioral_result.predicted_risk_tier)
 
-    # ── Late Fusion via Meta-Classifier ──
-    fusion_vec = np.hstack([text_probs, speech_probs, behavioral_probs]).reshape(1, -1)
-
-    if models.fusion_meta_clf is not None:
-        fusion_probs = models.fusion_meta_clf.predict_proba(fusion_vec)[0]
+    # ── Weighted Fusion (only available modalities) ──
+    if len(available_probs) == 0:
+        # No modalities provided — return uniform uncertainty
+        fusion_probs = np.array([1 / 3, 1 / 3, 1 / 3])
+    elif len(available_probs) == 1:
+        # Single modality: use its probability vector directly
+        _, fusion_probs, _ = available_probs[0]
     else:
-        # Fallback: simple average
-        fusion_probs = (text_probs + speech_probs + behavioral_probs) / 3.0
+        # Multi-modality: weighted average, normalized across available weights
+        total_weight = sum(w for _, _, w in available_probs)
+        fusion_probs = np.zeros(3)
+        for _, probs, weight in available_probs:
+            fusion_probs += (weight / total_weight) * probs
 
     pred_idx = int(np.argmax(fusion_probs))
     final_tier = LABEL_MAP[pred_idx]
@@ -415,7 +556,7 @@ def predict_multimodal(
     # Override: if low confidence flag is set, escalate for human review
     if low_confidence_flag and not escalate:
         escalate = True
-        urgency = max(urgency, "WARNING")  # at least WARNING
+        urgency = RANK_TO_URGENCY[max(URGENCY_RANK.get(urgency, 0), URGENCY_RANK["WARNING"])]
 
     # ── Coping recommendations ──
     recommendations = get_coping_recommendations(

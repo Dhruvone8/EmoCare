@@ -84,15 +84,6 @@ CREATE TABLE IF NOT EXISTS therapy_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_therapy_sessions_user ON therapy_sessions (user_id);
 
-CREATE TABLE IF NOT EXISTS messages (
-    id SERIAL PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES therapy_sessions(id) ON DELETE CASCADE,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant')),
-    content TEXT NOT NULL,
-    risk_tier VARCHAR(20),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id);
 
 CREATE TABLE IF NOT EXISTS therapy_messages (
     id SERIAL PRIMARY KEY,
@@ -145,15 +136,6 @@ CREATE TABLE IF NOT EXISTS therapy_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sqlite_therapy_sessions_user ON therapy_sessions (user_id);
 
-CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    risk_tier TEXT,
-    created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_sqlite_messages_session ON messages (session_id);
 
 CREATE TABLE IF NOT EXISTS therapy_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,13 +162,63 @@ CREATE INDEX IF NOT EXISTS idx_sqlite_session_summaries_user ON session_summarie
 
 
 _pg_available: Optional[bool] = None
+_pg_pool = None  # psycopg2.pool.ThreadedConnectionPool when available
+
+
+def init_pg_pool(minconn: int = 1, maxconn: int = 10) -> bool:
+    """Initialize a thread-safe PostgreSQL connection pool.
+
+    Returns True if pool was created, False otherwise.
+    Called by init_db() and optionally by FastAPI lifespan.
+    """
+    global _pg_pool, _pg_available
+    if not DATABASE_URL or "postgresql" not in DATABASE_URL:
+        return False
+    try:
+        from psycopg2.pool import ThreadedConnectionPool
+        _pg_pool = ThreadedConnectionPool(minconn, maxconn, DATABASE_URL, connect_timeout=3)
+        _pg_available = True
+        logger.info(f"PostgreSQL connection pool initialized (min={minconn}, max={maxconn})")
+        return True
+    except Exception as e:
+        logger.warning(f"Connection pool init failed: {e}")
+        _pg_pool = None
+        _pg_available = False
+        return False
+
+
+def close_pg_pool():
+    """Close all connections in the pool. Called on application shutdown."""
+    global _pg_pool
+    if _pg_pool is not None:
+        try:
+            _pg_pool.closeall()
+            logger.info("PostgreSQL connection pool closed")
+        except Exception as e:
+            logger.warning(f"Error closing pool: {e}")
+        _pg_pool = None
 
 
 def _get_pg_connection():
-    """Attempt PostgreSQL connection with strict timeout and availability caching."""
+    """Get a PostgreSQL connection from the pool, or create one directly.
+
+    If a pool is available, checks out a connection (must be returned via putconn).
+    Otherwise falls back to a direct per-request connection.
+    """
     global _pg_available
     if _pg_available is False or not DATABASE_URL:
         return None
+
+    # Try pool first
+    if _pg_pool is not None:
+        try:
+            conn = _pg_pool.getconn()
+            _pg_available = True
+            return conn
+        except Exception as e:
+            logger.debug(f"Pool checkout failed: {e}")
+
+    # Fallback to direct connection
     try:
         import psycopg2
         conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
@@ -196,6 +228,23 @@ def _get_pg_connection():
         logger.debug(f"PostgreSQL connection unavailable: {e}")
         _pg_available = False
         return None
+
+
+def _put_pg_connection(conn):
+    """Return a PostgreSQL connection to the pool, or close it if no pool."""
+    if conn is None:
+        return
+    if _pg_pool is not None:
+        try:
+            _pg_pool.putconn(conn)
+            return
+        except Exception:
+            pass
+    # No pool or putconn failed — close directly
+    try:
+        conn.close()
+    except Exception:
+        pass
 
 
 def _get_sqlite_connection():
@@ -284,6 +333,38 @@ def _migrate_therapy_sessions_pg(cur):
         logger.warning(f"PostgreSQL therapy_sessions migration note: {e}")
 
 
+def _migrate_therapy_messages_sqlite(conn: sqlite3.Connection):
+    """Ensure any legacy messages are consolidated into therapy_messages."""
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='messages';")
+        if cur.fetchone():
+            cur.execute("""
+                INSERT OR IGNORE INTO therapy_messages (id, session_id, role, content, risk_tier, created_at)
+                SELECT id, session_id, role, content, risk_tier, created_at FROM messages;
+            """)
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"SQLite therapy_messages migration note: {e}")
+
+
+def _migrate_therapy_messages_pg(cur):
+    """Ensure any legacy messages are consolidated into therapy_messages."""
+    try:
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'messages') THEN
+                    INSERT INTO therapy_messages (id, session_id, role, content, risk_tier, created_at)
+                    SELECT id, session_id, role, content, risk_tier, created_at FROM messages
+                    ON CONFLICT (id) DO NOTHING;
+                END IF;
+            END $$;
+        """)
+    except Exception as e:
+        logger.warning(f"PostgreSQL therapy_messages migration note: {e}")
+
+
 def init_db():
     """Initialize database tables for PostgreSQL or local SQLite."""
     global _pg_available
@@ -294,8 +375,9 @@ def init_db():
                 cur.execute(PG_TABLE_SQL)
                 _migrate_assessment_table_pg(cur)
                 _migrate_therapy_sessions_pg(cur)
+                _migrate_therapy_messages_pg(cur)
             pg_conn.commit()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             _pg_available = True
             logger.info("Connected to PostgreSQL — all tables initialized.")
             return "postgresql"
@@ -304,7 +386,7 @@ def init_db():
             _pg_available = False
             if pg_conn:
                 try:
-                    pg_conn.close()
+                    _put_pg_connection(pg_conn)
                 except Exception:
                     pass
 
@@ -315,6 +397,7 @@ def init_db():
         cur.executescript(SQLITE_TABLE_SQL)
         _migrate_assessment_table_sqlite(conn)
         _migrate_therapy_sessions_sqlite(conn)
+        _migrate_therapy_messages_sqlite(conn)
         conn.commit()
         conn.close()
         _pg_available = False
@@ -377,12 +460,12 @@ def save_assessment_attempt(
                 )
                 inserted_id = cur.fetchone()[0]
             pg_conn.commit()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return inserted_id
         except Exception as e:
             logger.error(f"PostgreSQL insert failed: {e}. Falling back to SQLite.")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     # 2. Fallback to SQLite (built-in, zero config)
     try:
@@ -460,12 +543,12 @@ def get_user_assessment_history(user_id: str, limit: int = 20) -> List[Dict[str,
                         "llm_summary": row[10] or "",
                         "timestamp": row[11].isoformat() if hasattr(row[11], "isoformat") else str(row[11]),
                     })
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return results
         except Exception as e:
             logger.error(f"PostgreSQL fetch history failed: {e}. Falling back to SQLite.")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     # 2. SQLite fallback
     try:
@@ -533,12 +616,12 @@ def create_therapy_session(
                 )
                 session_id = cur.fetchone()[0]
             pg_conn.commit()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return session_id
         except Exception as e:
             logger.error(f"PG create_therapy_session failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()
@@ -570,12 +653,12 @@ def end_therapy_session(session_id: int) -> bool:
                     (now, session_id),
                 )
             pg_conn.commit()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return True
         except Exception as e:
             logger.error(f"PG end_therapy_session failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()
@@ -607,7 +690,7 @@ def get_therapy_session(session_id: int) -> Optional[Dict[str, Any]]:
                     (session_id,),
                 )
                 r = cur.fetchone()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             if r:
                 return {
                     "id": r[0], "user_id": r[1], "mode": r[2],
@@ -626,7 +709,7 @@ def get_therapy_session(session_id: int) -> Optional[Dict[str, Any]]:
         except Exception as e:
             logger.error(f"PG get_therapy_session failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()
@@ -689,12 +772,12 @@ def update_therapy_session_state(session_id: int, **kwargs) -> bool:
             with pg_conn.cursor() as cur:
                 cur.execute(sql, tuple(values))
             pg_conn.commit()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return True
         except Exception as e:
             logger.error(f"PG update_therapy_session_state failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()
@@ -730,45 +813,28 @@ def save_therapy_message(
         try:
             with pg_conn.cursor() as cur:
                 cur.execute(
-                    """INSERT INTO messages (session_id, role, content, risk_tier, created_at)
+                    """INSERT INTO therapy_messages (session_id, role, content, risk_tier, created_at)
                        VALUES (%s, %s, %s, %s, %s) RETURNING id;""",
                     (session_id, role, content, risk_tier, now),
                 )
                 msg_id = cur.fetchone()[0]
-                # Also keep therapy_messages in sync for backwards-compatibility
-                try:
-                    cur.execute(
-                        """INSERT INTO therapy_messages (id, session_id, role, content, risk_tier, created_at)
-                           VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING;""",
-                        (msg_id, session_id, role, content, risk_tier, now),
-                    )
-                except Exception:
-                    pass
             pg_conn.commit()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return msg_id
         except Exception as e:
             logger.error(f"PG save_therapy_message failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()
         cur = conn.cursor()
         cur.execute(
-            """INSERT INTO messages (session_id, role, content, risk_tier, created_at)
+            """INSERT INTO therapy_messages (session_id, role, content, risk_tier, created_at)
                VALUES (?, ?, ?, ?, ?);""",
             (session_id, role, content, risk_tier, now.isoformat()),
         )
         msg_id = cur.lastrowid
-        try:
-            cur.execute(
-                """INSERT OR IGNORE INTO therapy_messages (id, session_id, role, content, risk_tier, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?);""",
-                (msg_id, session_id, role, content, risk_tier, now.isoformat()),
-            )
-        except Exception:
-            pass
         conn.commit()
         conn.close()
         return msg_id
@@ -791,12 +857,12 @@ def get_session_messages(
             with pg_conn.cursor() as cur:
                 cur.execute(
                     """SELECT id, role, content, risk_tier, created_at
-                       FROM messages WHERE session_id = %s
+                       FROM therapy_messages WHERE session_id = %s
                        ORDER BY created_at ASC;""",
                     (session_id,),
                 )
                 rows = cur.fetchall()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return [
                 {"id": r[0], "role": r[1], "content": r[2], "risk_tier": r[3], "created_at": str(r[4])}
                 for r in rows
@@ -804,14 +870,14 @@ def get_session_messages(
         except Exception as e:
             logger.error(f"PG get_session_messages failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()
         cur = conn.cursor()
         cur.execute(
             """SELECT id, role, content, risk_tier, created_at
-               FROM messages WHERE session_id = ?
+               FROM therapy_messages WHERE session_id = ?
                ORDER BY created_at ASC;""",
             (session_id,),
         )
@@ -856,12 +922,12 @@ def save_session_summary(
                 )
                 summary_id = cur.fetchone()[0]
             pg_conn.commit()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return summary_id
         except Exception as e:
             logger.error(f"PG save_session_summary failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()
@@ -903,7 +969,7 @@ def get_recent_session_summaries(
                     (user_id, limit),
                 )
                 rows = cur.fetchall()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return [
                 {
                     "id": r[0], "session_id": r[1], "summary_text": r[2],
@@ -917,7 +983,7 @@ def get_recent_session_summaries(
         except Exception as e:
             logger.error(f"PG get_recent_session_summaries failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()
@@ -969,7 +1035,7 @@ def get_all_user_sessions(
                     (user_id,),
                 )
                 rows = cur.fetchall()
-            pg_conn.close()
+            _put_pg_connection(pg_conn)
             return [
                 {
                     "id": r[0],
@@ -988,7 +1054,7 @@ def get_all_user_sessions(
         except Exception as e:
             logger.error(f"PG get_all_user_sessions failed: {e}")
             if pg_conn:
-                pg_conn.close()
+                _put_pg_connection(pg_conn)
 
     try:
         conn = _get_sqlite_connection()

@@ -7,11 +7,12 @@ Latency Optimizations:
 2. Acoustic SER runs on a background worker thread with prosodic pyin calculation disabled.
 3. Database writes (message persistence) are fire-and-forget background tasks.
 4. Persistent connection pool reuses TCP/TLS sessions for STT, LLM, and TTS.
-5. Voice-mode LLM tokens are capped at 120 tokens with a concise spoken cadence prompt.
-6. ElevenLabs TTS uses flash v2.5 with optimize_streaming_latency=4 and voice-optimized 22kHz format.
+5. Voice-mode LLM tokens are capped at 280 tokens with a reflective, tool-gated prompt.
+6. Generated replies are sanitized before the same final text is persisted and sent to ElevenLabs TTS.
 """
 import asyncio
 import logging
+import re
 from typing import Optional
 
 from .stt_client import transcribe_audio
@@ -20,6 +21,11 @@ from ..inference import predict_speech, predict_text
 from ..model_loader import models
 from ..therapy import _build_crisis_response, _is_crisis_signal
 from .llm_client import chat_completion
+from .therapy_session_manager import (
+    STAGE_EXPLORING,
+    classify_message_intent,
+    validate_and_sanitize_response,
+)
 from ..db import (
     save_therapy_message,
     get_session_messages,
@@ -45,6 +51,80 @@ def _safe_predict_speech(audio_bytes: bytes) -> tuple[Optional[str], str]:
     except Exception as e:
         logger.warning(f"Speech emotion analysis failed (non-fatal): {e}")
         return None, "Low"
+
+
+VOICE_REFLECTIVE_FALLBACK = (
+    "I'm listening carefully to what you're sharing. "
+    "What feels most important for you to talk through right now?"
+)
+
+VOICE_UNSAFE_RESPONSE_PATTERNS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bdiagnos\w*\b",
+        r"\b(?:depress(?:ed|ion|ive)|bipolar|schizophrenia|anxiety\s+disorder|ptsd|adhd|ocd)\b",
+        r"\b(?:medication|medicine|antidepressant\w*|dosage|prescrib\w*|\d+\s*mg)\b",
+        r"\b(?:promise|guarantee\w*|cure[sd]?)\b",
+        r"\b(?:you\s+should|you\s+need\s+to|you\s+must)\b",
+        r"\b(?:quit\s+your|stop\s+taking|start\s+taking)\b",
+        r"\btry\s+(?:journaling|writing|meditating|breathing|grounding|this|that|a|an)\b",
+        r"\b(?:do|try)\s+(?:this|that|these)\s+(?:exercise|technique|steps?)\b",
+        r"\btake\s+a\s+(?:walk|break|bath|shower|nap)\b",
+        r"\bwrite\s+(?:down|about)\b",
+        r"\b(?:call|text|contact)\s+(?:a|your)\s+(?:friend|family|counselor|therapist)\b",
+        r"\byou\s+(?:can|could|may|might)\s+(?:try|take|practice|stop|start|quit|avoid|use|write|call|text|contact|consult|seek|schedule|consider|breathe)\b",
+        r"(?:^|[.!?]\s+|\n\s*)(?:try|take|practice|stop|start|quit|avoid|use|do|write|call|text|contact|consult|seek|schedule|reach\s+out|consider|make|focus|place|name|identify|breathe|ground|remember)\b",
+        r"\b(?:this|it)\s+will\s+(?:fix|heal|cure|resolve)\b",
+    )
+]
+
+
+def sanitize_voice_response(
+    reply: str,
+    user_message: str,
+    tools_used: list[dict],
+    recent_history: Optional[list[dict]] = None,
+) -> str:
+    """Allow reflective listening or exact approved tool output, never improvised advice."""
+    approved_outputs = []
+    has_crisis_resources = False
+    for tool in tools_used:
+        if not isinstance(tool, dict):
+            continue
+        tool_name = tool.get("tool_name")
+        output = str(tool.get("tool_output", "")).strip()
+        if (
+            tool_name in {"get_cbt_coping_technique", "get_crisis_resources"}
+            and output
+            and not output.startswith("No techniques found")
+        ):
+            approved_outputs.append(output)
+            has_crisis_resources = has_crisis_resources or tool_name == "get_crisis_resources"
+
+    if approved_outputs:
+        prefix = (
+            "Your safety matters. Please use these support resources."
+            if has_crisis_resources
+            else "I'm listening carefully to what you're sharing. "
+                 "We can use this structured technique together."
+        )
+        return f"{prefix}\n" + "\n".join(approved_outputs)
+
+    intent = classify_message_intent(user_message)
+    sanitized = validate_and_sanitize_response(
+        reply=reply,
+        user_message=user_message,
+        intent=intent,
+        current_stage=STAGE_EXPLORING,
+        recent_history=recent_history or [],
+    )
+    sanitized = re.sub(r"[*_`#]+", "", sanitized).strip()
+    if not sanitized or any(
+        pattern.search(sanitized) for pattern in VOICE_UNSAFE_RESPONSE_PATTERNS
+    ):
+        logger.warning("Unsafe or ungrounded voice response replaced with reflective listening")
+        return VOICE_REFLECTIVE_FALLBACK
+    return sanitized
 
 
 async def process_voice_turn(
@@ -184,16 +264,16 @@ async def process_voice_turn(
             "role": "user",
             "content": (
                 f"[SYSTEM CONTEXT — {note_str} "
-                "Act like a skilled, compassionate therapist: "
-                "1) Briefly acknowledge and validate their emotion with genuine warmth. "
-                "2) Actively provide a practical coping suggestion, cognitive reframing, or actionable strategy to manage the situation. "
-                "3) Ask an insightful, collaborative follow-up question to help them reflect deeper or try out the suggestion. "
-                "Keep the spoken response natural, warm, conversational (2-4 spoken sentences), and free of markdown or asterisks.]"
+                "Use active reflective listening only. Do not diagnose, prescribe, promise outcomes, "
+                "or invent therapeutic advice. If a structured exercise is appropriate, invoke "
+                "get_cbt_coping_technique instead of writing it yourself. Otherwise, acknowledge "
+                "the user's specific experience and ask at most one collaborative follow-up question. "
+                "Use plain spoken sentences without markdown.]"
             )
         })
         llm_messages.append({
             "role": "assistant",
-            "content": "Understood. I will validate warmly, offer an actionable coping suggestion, and ask an insightful follow-up question."
+            "content": "Understood. I will use reflective listening and approved CBT tools only."
         })
 
     # Add conversation history
@@ -211,8 +291,13 @@ async def process_voice_turn(
         user_id=user_id,
     )
 
-    reply_text = llm_result.get("reply") or "I hear what you are experiencing, and I am right here with you. How can I best support you right now?"
     tools_used = llm_result.get("tools_used", [])
+    reply_text = sanitize_voice_response(
+        reply=llm_result.get("reply") or "",
+        user_message=transcript,
+        tools_used=tools_used,
+        recent_history=session_msgs,
+    )
 
     # Persist assistant reply in background
     asyncio.create_task(

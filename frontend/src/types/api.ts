@@ -102,12 +102,30 @@ export interface HealthResponse {
 }
 
 // ── Self-Assessment (PHQ-9 & GAD-7) ───────────────────────────────────
+export interface AssessmentFollowUpData {
+  functional_difficulty: string;
+  impact_areas: string[];
+  duration: string;
+  trajectory: string;
+  prior_history: string;
+  elevation_screen: string;
+  life_factors: string[];
+  coping_goals: string[];
+}
+
+export interface AssessmentSafetyDisclosure {
+  active_thoughts: boolean;
+  immediate_intent: boolean;
+  safe_person_nearby: boolean;
+  notes?: string;
+}
+
 export interface AssessmentSubmissionRequest {
   user_id: string;
   test_type: "phq9" | "gad7";
   responses: number[];
-  follow_up_data?: Record<string, unknown>;
-  safety_disclosure?: Record<string, unknown>;
+  follow_up_data?: AssessmentFollowUpData;
+  safety_disclosure?: AssessmentSafetyDisclosure;
 }
 
 export interface SymptomDomainItem {

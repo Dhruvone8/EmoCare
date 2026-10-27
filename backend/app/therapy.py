@@ -2,13 +2,13 @@
 EmoCare Therapy Orchestrator — Chat & Voice therapy pipeline.
 
 SAFETY ARCHITECTURE:
-1. Every user message is classified by the EXISTING text risk model BEFORE the LLM sees it.
-2. If risk_tier == "High" or urgency == "CRITICAL": bypass the LLM entirely and
-   return the EXISTING deterministic crisis protocol response.
+1. Every user message is classified by the calibrated text risk model BEFORE the LLM sees it.
+2. Explicit suicidal or self-harm crisis signals bypass the LLM and return the deterministic
+   crisis protocol. Broader High distress without explicit crisis language does not use that shortcut.
 3. Otherwise: load session memory, invoke LLM with tool-calling access to the
    deterministic CBT catalog and crisis resources.
 
-The LLM NEVER gets to decide whether to escalate — the classifier does.
+The LLM never gets to decide whether to activate the crisis protocol.
 """
 import json
 import logging
@@ -109,26 +109,12 @@ def _build_crisis_response(risk_tier: str, mode: str = "chat") -> dict:
     }
 
 
-import re
-
-# ── Clinical Crisis Detection Patterns (PHQ-9 Item 9 & self-harm markers)
-CRISIS_PATTERNS = [
-    re.compile(r"\b(suicid|kill(ing)?\s+myself|end\s+my\s+life|want\s+to\s+die|better\s+off\s+dead|harm(ing)?\s+myself|hurt(ing)?\s+myself)\b", re.IGNORECASE),
-]
+from .safety import is_crisis_signal
 
 
 def _is_crisis_signal(text: str, text_risk=None) -> bool:
-    """
-    Detect if text contains acute clinical crisis signals (active suicidal ideation or self-harm)
-    that necessitate immediately short-circuiting to emergency crisis resources.
-
-    General emotional distress, sadness, loneliness, overwhelm, and anxiety are NOT crisis signals;
-    they are the exact emotional states therapy is designed to address collaboratively.
-    """
-    for pattern in CRISIS_PATTERNS:
-        if pattern.search(text):
-            return True
-    return False
+    """Return whether explicit crisis language requires deterministic escalation."""
+    return is_crisis_signal(text)
 
 
 # ── Main Chat Therapy Turn ─────────────────────────────────────────────
