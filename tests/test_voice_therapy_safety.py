@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
-from backend.app.db import create_therapy_session
+from backend.app.db import create_therapy_session, save_assessment_attempt
 from backend.app.engine import llm_client
 from backend.app.engine import voice_therapy
 from backend.app.engine.voice_therapy import (
@@ -165,3 +165,39 @@ def test_voice_crisis_path_bypasses_llm_and_uses_deterministic_resources(monkeyp
     assert "988" in result["reply_text"]
     chat_mock.assert_not_awaited()
     assert tts_mock.await_args.args[0] == result["reply_text"]
+
+
+def test_voice_pipeline_uses_latest_saved_assessment(monkeypatch):
+    owner, session_id, chat_mock, _tts_mock, _save_mock = configure_voice_turn(
+        monkeypatch,
+        "I feel overwhelmed at work.",
+        {
+            "reply": "Work sounds overwhelming. What has been the hardest part for you?",
+            "tools_used": [],
+        },
+    )
+    attempt_id = save_assessment_attempt(
+        user_id=owner,
+        test_type="gad7",
+        responses=[2, 2, 2, 2, 1, 1, 1],
+        total_score=11,
+        severity_band="Moderate",
+        risk_tier="Moderate",
+        llm_summary="Excessive worry and difficulty relaxing were reported.",
+    )
+    assert attempt_id is not None
+
+    asyncio.run(voice_therapy.process_voice_turn(
+        session_id=session_id,
+        user_id=owner,
+        audio_bytes=b"offline-audio",
+    ))
+
+    messages = chat_mock.await_args.kwargs["messages"]
+    context = "\n".join(str(message.get("content", "")) for message in messages)
+    assert "LATEST SAVED SELF-ASSESSMENT" in context
+    assert "GAD-7" in context
+    assert "11/21" in context
+    assert "severity: Moderate" in context
+    assert "Saved result summary: Excessive worry and difficulty relaxing were reported." in context
+    assert "HISTORICAL CONTEXT ONLY" in context

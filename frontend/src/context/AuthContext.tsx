@@ -14,7 +14,7 @@ interface AuthContextType {
   authModalMode: "login" | "signup";
   setAuthModalMode: (mode: "login" | "signup") => void;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signUp: (email: string, password: string, fullName?: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, fullName: string, age: number) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -85,13 +85,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
-  const signUp = async (email: string, password: string, fullName?: string) => {
+  const signUp = async (email: string, password: string, fullName: string, age: number) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: fullName,
+          age: age,
         },
       },
     });

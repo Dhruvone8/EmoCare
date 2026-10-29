@@ -15,6 +15,8 @@ Validates:
 """
 import pytest
 import asyncio
+from unittest.mock import AsyncMock
+from uuid import uuid4
 from fastapi.testclient import TestClient
 from auth_helpers import auth_headers
 
@@ -46,6 +48,7 @@ from backend.app.db import (
     create_therapy_session,
     get_therapy_session,
     get_session_messages,
+    save_assessment_attempt,
 )
 
 client = TestClient(app)
@@ -307,4 +310,43 @@ def test_acute_crisis_safety_handling():
         assert turn["crisis_activated"] is True
         assert turn["urgency_level"] == "CRITICAL"
         assert "988" in turn["reply"] or "crisis helpline" in turn["reply"].lower()
+    asyncio.run(_run())
+
+
+def test_chat_uses_latest_saved_assessment(monkeypatch):
+    async def _run():
+        owner = f"chat_assessment_{uuid4().hex}"
+        session_id = create_therapy_session(owner, "chat")
+        attempt_id = save_assessment_attempt(
+            user_id=owner,
+            test_type="phq9",
+            responses=[2, 2, 2, 2, 1, 1, 1, 1, 0],
+            total_score=12,
+            severity_band="Moderate",
+            risk_tier="Moderate",
+            llm_summary="Trouble concentrating and persistent low mood were reported.",
+        )
+        assert attempt_id is not None
+
+        chat_mock = AsyncMock(return_value={
+            "reply": "The argument with your professor sounds painful. What was the hardest part?",
+            "tools_used": [],
+        })
+        monkeypatch.setattr("backend.app.therapy.chat_completion", chat_mock)
+
+        await process_chat_turn(
+            session_id=session_id,
+            user_id=owner,
+            user_message="Today I argued with my professor and he scolded me.",
+        )
+
+        messages = chat_mock.await_args.kwargs["messages"]
+        context = messages[0]["content"]
+        assert "LATEST SAVED SELF-ASSESSMENT" in context
+        assert "PHQ-9" in context
+        assert "12/27" in context
+        assert "severity: Moderate" in context
+        assert "Saved result summary: Trouble concentrating and persistent low mood were reported." in context
+        assert "HISTORICAL CONTEXT ONLY" in context
+
     asyncio.run(_run())

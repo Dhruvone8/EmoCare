@@ -5,8 +5,8 @@ SAFETY ARCHITECTURE:
 1. Every user message is classified by the calibrated text risk model BEFORE the LLM sees it.
 2. Explicit suicidal or self-harm crisis signals bypass the LLM and return the deterministic
    crisis protocol. Broader High distress without explicit crisis language does not use that shortcut.
-3. Otherwise: load session memory, invoke LLM with tool-calling access to the
-   deterministic CBT catalog and crisis resources.
+3. Otherwise: load session memory and the latest saved assessment, then invoke the LLM
+   with tool-calling access to the deterministic CBT catalog and crisis resources.
 
 The LLM never gets to decide whether to activate the crisis protocol.
 """
@@ -53,6 +53,7 @@ from .db import (
     save_therapy_message,
     get_session_messages,
     get_recent_session_summaries,
+    get_user_assessment_history,
     save_session_summary,
     get_therapy_session,
     update_therapy_session_state,
@@ -115,6 +116,30 @@ from .safety import is_crisis_signal
 def _is_crisis_signal(text: str, text_risk=None) -> bool:
     """Return whether explicit crisis language requires deterministic escalation."""
     return is_crisis_signal(text)
+
+
+def _build_assessment_context(assessment: dict | None) -> str:
+    """Format a saved screening result as non-diagnostic historical context."""
+    if not assessment:
+        return ""
+
+    test_type = str(assessment.get("test_type", "")).lower()
+    test_name = {"phq9": "PHQ-9", "gad7": "GAD-7"}.get(test_type, test_type.upper())
+    context = (
+        "LATEST SAVED SELF-ASSESSMENT (HISTORICAL CONTEXT ONLY):\n"
+        f"- {test_name} recorded at {assessment.get('timestamp', 'unknown time')}: "
+        f"{assessment.get('total_score', '?')}/{assessment.get('max_score', '?')}; "
+        f"severity: {assessment.get('severity_band', 'unknown')}; "
+        f"risk tier: {assessment.get('risk_tier', 'unknown')}.\n"
+    )
+    summary = str(assessment.get("llm_summary", "")).strip()
+    if summary:
+        context += f"- Saved result summary: {summary}\n"
+    return context + (
+        "Use this background only when relevant. Do not treat it as a diagnosis or as the user's "
+        "current state, do not repeat scores unprompted, and do not let it override the current "
+        "conversation or safety checks."
+    )
 
 
 # ── Main Chat Therapy Turn ─────────────────────────────────────────────
@@ -281,6 +306,10 @@ async def process_chat_turn(
 
     # ── Step 5: Build Clean LLM Context (Strict Context Isolation) ─────
     llm_messages = []
+    assessment_history = get_user_assessment_history(user_id, limit=1)
+    assessment_context = _build_assessment_context(
+        assessment_history[0] if assessment_history else None
+    )
 
     # Inject verified facts & separate from hypotheses
     fact_block = []
@@ -298,6 +327,8 @@ async def process_chat_turn(
     )
     if fact_block:
         stage_directive += "\n" + "\n".join(fact_block)
+    if assessment_context:
+        stage_directive += "\n" + assessment_context
 
     llm_messages.append({"role": "user", "content": stage_directive})
     llm_messages.append({"role": "assistant", "content": "Understood. I will strictly adhere to these stage goals and constraints."})

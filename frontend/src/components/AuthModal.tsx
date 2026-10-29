@@ -16,6 +16,7 @@ export function AuthModal() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [age, setAge] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -26,10 +27,22 @@ export function AuthModal() {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
-    setLoading(true);
 
+    const parsedAge = Number(age);
+    if (
+      authModalMode === "signup" &&
+      (!/^\d+$/.test(age) ||
+        !Number.isInteger(parsedAge) ||
+        parsedAge < 10 ||
+        parsedAge > 120)
+    ) {
+      setErrorMsg("Age must be a whole number between 10 and 120.");
+      return;
+    }
+
+    setLoading(true);
     if (authModalMode === "signup") {
-      const { error } = await signUp(email, password, fullName);
+      const { error } = await signUp(email, password, fullName, parsedAge);
       if (error) {
         setErrorMsg(error.message);
       } else {
@@ -124,19 +137,44 @@ export function AuthModal() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {authModalMode === "signup" && (
-            <div>
-              <label className="block text-xs font-medium text-on-surface-variant mb-1">
-                Full Name
-              </label>
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. Alex Rivera"
-                className="w-full px-3 py-2 text-sm rounded-lg bg-surface-variant/40 border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/50 text-on-surface placeholder:text-on-surface-variant/50"
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="e.g. Alex Rivera"
+                  className="w-full px-3 py-2 text-sm rounded-lg bg-surface-variant/40 border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/50 text-on-surface placeholder:text-on-surface-variant/50"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="signup-age"
+                  className="block text-xs font-medium text-on-surface-variant mb-1"
+                >
+                  Age
+                </label>
+                <input
+                  id="signup-age"
+                  name="age"
+                  type="number"
+                  required
+                  min={10}
+                  max={120}
+                  step={1}
+                  inputMode="numeric"
+                  value={age}
+                  onChange={(e) => setAge(e.target.value)}
+                  placeholder="e.g. 25"
+                  className="w-full px-3 py-2 text-sm rounded-lg bg-surface-variant/40 border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/50 text-on-surface placeholder:text-on-surface-variant/50"
+                />
+              </div>
+            </>
           )}
 
           <div>

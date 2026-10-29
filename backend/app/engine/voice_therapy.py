@@ -2,8 +2,8 @@
 EmoCare Voice Therapy Pipeline — Ultra-fast parallel audio-in → audio-out orchestrator.
 
 Latency Optimizations:
-1. True parallel execution: Whisper STT, acoustic emotion analysis, and database session memory
-   all execute concurrently at turn start.
+1. True parallel execution: Whisper STT, acoustic emotion analysis, session memory, and the
+   latest saved assessment all execute concurrently at turn start.
 2. Acoustic SER runs on a background worker thread with prosodic pyin calculation disabled.
 3. Database writes (message persistence) are fire-and-forget background tasks.
 4. Persistent connection pool reuses TCP/TLS sessions for STT, LLM, and TTS.
@@ -19,7 +19,7 @@ from .stt_client import transcribe_audio
 from .tts_client import synthesize_speech
 from ..inference import predict_speech, predict_text
 from ..model_loader import models
-from ..therapy import _build_crisis_response, _is_crisis_signal
+from ..therapy import _build_assessment_context, _build_crisis_response, _is_crisis_signal
 from .llm_client import chat_completion
 from .therapy_session_manager import (
     STAGE_EXPLORING,
@@ -30,6 +30,7 @@ from ..db import (
     save_therapy_message,
     get_session_messages,
     get_recent_session_summaries,
+    get_user_assessment_history,
 )
 
 logger = logging.getLogger("emocare.voice_therapy")
@@ -147,6 +148,9 @@ async def process_voice_turn(
     session_msgs_task = asyncio.create_task(
         asyncio.to_thread(get_session_messages, session_id)
     )
+    assessment_history_task = asyncio.create_task(
+        asyncio.to_thread(get_user_assessment_history, user_id, 1)
+    )
 
     # Await transcription and acoustic emotion concurrently
     transcript, (speech_emotion, speech_risk_tier) = await asyncio.gather(
@@ -228,11 +232,23 @@ async def process_voice_turn(
         }
 
     # ── Step 5: Build LLM Context from Prefetched DB Results ──────────
-    prior_summaries, session_msgs = await asyncio.gather(
-        prior_summaries_task, session_msgs_task
+    prior_summaries, session_msgs, assessment_history = await asyncio.gather(
+        prior_summaries_task, session_msgs_task, assessment_history_task
     )
 
     llm_messages = []
+    assessment_context = _build_assessment_context(
+        assessment_history[0] if assessment_history else None
+    )
+    if assessment_context:
+        llm_messages.append({
+            "role": "user",
+            "content": f"[SYSTEM CONTEXT — do not repeat this to the user]\n{assessment_context}"
+        })
+        llm_messages.append({
+            "role": "assistant",
+            "content": "I'll use this historical assessment only when it is relevant."
+        })
 
     # Inject session memory
     if prior_summaries:
