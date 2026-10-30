@@ -98,10 +98,11 @@ export function Navigation() {
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                   className="flex items-center gap-2 py-1.5 px-3.5 rounded-full bg-primary/8 hover:bg-primary/15 text-primary border border-primary/15 transition-all duration-200 hover:shadow-xs active:scale-95 cursor-pointer text-xs font-semibold select-none"
-                  aria-label="User menu"
+                  aria-label={`Signed in as ${displayName}. Open user menu`}
+                  title={user.email ? `Signed in as ${user.email}` : "Signed in"}
                 >
                   <span className="material-symbols-outlined text-lg leading-none">account_circle</span>
-                  <span className="max-w-[110px] truncate hidden sm:inline">{displayName}</span>
+                  <span className="max-w-[110px] truncate hidden min-[420px]:inline">{displayName}</span>
                   <span className="material-symbols-outlined text-sm leading-none transition-transform duration-200">
                     {dropdownOpen ? "expand_less" : "expand_more"}
                   </span>

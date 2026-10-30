@@ -45,6 +45,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"login" | "signup">("login");
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authNotice) return;
+    const timeout = window.setTimeout(() => setAuthNotice(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [authNotice]);
 
   useEffect(() => {
     let isMounted = true;
@@ -94,14 +101,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error) {
-      if (data?.session) {
-        setSession(data.session);
-        setUser(data.user ?? null);
-      }
-      closeAuthModal();
+    if (error) return { error };
+    if (!data.session) {
+      return {
+        error: new AuthError(
+          "Sign-in did not create an active session. Please confirm your email and try again."
+        ),
+      };
     }
-    return { error };
+
+    const authenticatedUser = data.user ?? data.session.user;
+    setSession(data.session);
+    setUser(authenticatedUser);
+    setLoading(false);
+    setAuthNotice(`Signed in as ${authenticatedUser.email ?? "your account"}.`);
+    closeAuthModal();
+    return { error: null };
   };
 
   const signUp = async (email: string, password: string, fullName: string, age: number) => {
@@ -115,11 +130,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       },
     });
-    if (!error) {
-      if (data?.session) {
-        setSession(data.session);
-        setUser(data.user ?? null);
-      }
+    if (!error && data.session) {
+      const authenticatedUser = data.user ?? data.session.user;
+      setSession(data.session);
+      setUser(authenticatedUser);
+      setLoading(false);
+      setAuthNotice(`Account created. Signed in as ${authenticatedUser.email ?? "your account"}.`);
       closeAuthModal();
     }
     return { error };
@@ -129,6 +145,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     setSession(null);
     setUser(null);
+    setLoading(false);
+    setAuthNotice("You have been signed out.");
   };
 
   return (
@@ -148,6 +166,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+      {authNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 z-[80] flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-surface-container-lowest px-4 py-3 text-on-surface shadow-2xl sm:max-w-sm"
+        >
+          <span className="material-symbols-outlined text-emerald-600 shrink-0">check_circle</span>
+          <span className="flex-1 font-sans text-sm leading-relaxed">{authNotice}</span>
+          <button
+            type="button"
+            onClick={() => setAuthNotice(null)}
+            className="p-1 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-variant/40 transition-colors"
+            aria-label="Dismiss authentication notification"
+          >
+            <span className="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 }
