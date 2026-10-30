@@ -16,6 +16,9 @@ import type {
   SpeechResponse,
   BehavioralRequest,
   BehavioralResponse,
+  DailyCheckIn,
+  DailyCheckInRequest,
+  TodayCheckInResponse,
   MultimodalResponse,
   MultimodalRequest,
   AssessmentSubmissionRequest,
@@ -218,6 +221,33 @@ export async function predictBehavioral(
   data: BehavioralRequest
 ): Promise<BehavioralResponse> {
   return apiFetch<BehavioralResponse>("/api/predict/behavioral", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+// ── Daily Check-ins ────────────────────────────────────────────────────
+
+export function getLocalDateKey(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export async function getTodayCheckIn(
+  localDate: string
+): Promise<TodayCheckInResponse> {
+  return apiFetch<TodayCheckInResponse>(
+    `/api/checkins/today?local_date=${encodeURIComponent(localDate)}`
+  );
+}
+
+export async function saveDailyCheckIn(
+  data: DailyCheckInRequest
+): Promise<DailyCheckIn> {
+  return apiFetch<DailyCheckIn>("/api/checkins", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),

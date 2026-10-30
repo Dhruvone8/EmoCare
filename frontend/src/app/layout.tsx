@@ -4,6 +4,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { AuthProvider } from "@/context/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
+import { DailyCheckInGate } from "@/components/DailyCheckInModal";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -39,6 +40,7 @@ export default function RootLayout({
           </main>
           <Footer />
           <AuthModal />
+          <DailyCheckInGate />
         </AuthProvider>
       </body>
     </html>

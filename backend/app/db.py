@@ -6,6 +6,7 @@ Manages:
 - Therapy sessions (chat & voice)
 - Therapy messages (per-turn conversation log)
 - Session summaries (structured memory for LLM context)
+- Daily wellbeing check-ins (one per user and local calendar date)
 
 Supports:
 1. PostgreSQL (production / Docker) via psycopg2 if configured and running.
@@ -15,7 +16,7 @@ import os
 import json
 import sqlite3
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional, List, Any, Dict
 
 # Auto-load .env from backend/ or project root
@@ -106,6 +107,24 @@ CREATE TABLE IF NOT EXISTS session_summaries (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_session_summaries_user ON session_summaries (user_id);
+
+CREATE TABLE IF NOT EXISTS daily_checkins (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    checkin_date DATE NOT NULL,
+    mood_rating INTEGER NOT NULL CHECK (mood_rating BETWEEN 1 AND 5),
+    stress_level INTEGER NOT NULL CHECK (stress_level BETWEEN 1 AND 5),
+    sleep_quality INTEGER NOT NULL CHECK (sleep_quality BETWEEN 1 AND 5),
+    energy_level INTEGER NOT NULL CHECK (energy_level BETWEEN 1 AND 5),
+    sleep_hours DOUBLE PRECISION,
+    activity_level INTEGER CHECK (activity_level BETWEEN 1 AND 5),
+    social_interaction INTEGER CHECK (social_interaction BETWEEN 1 AND 5),
+    exercise_minutes DOUBLE PRECISION CHECK (exercise_minutes >= 0),
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, checkin_date)
+);
 """
 
 # SQL DDL for SQLite
@@ -158,6 +177,24 @@ CREATE TABLE IF NOT EXISTS session_summaries (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sqlite_session_summaries_user ON session_summaries (user_id);
+
+CREATE TABLE IF NOT EXISTS daily_checkins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    checkin_date TEXT NOT NULL,
+    mood_rating INTEGER NOT NULL CHECK (mood_rating BETWEEN 1 AND 5),
+    stress_level INTEGER NOT NULL CHECK (stress_level BETWEEN 1 AND 5),
+    sleep_quality INTEGER NOT NULL CHECK (sleep_quality BETWEEN 1 AND 5),
+    energy_level INTEGER NOT NULL CHECK (energy_level BETWEEN 1 AND 5),
+    sleep_hours REAL,
+    activity_level INTEGER CHECK (activity_level BETWEEN 1 AND 5),
+    social_interaction INTEGER CHECK (social_interaction BETWEEN 1 AND 5),
+    exercise_minutes REAL CHECK (exercise_minutes >= 0),
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, checkin_date)
+);
 """
 
 
@@ -588,6 +625,216 @@ def get_user_assessment_history(user_id: str, limit: int = 20) -> List[Dict[str,
     except Exception as e:
         logger.error(f"SQLite fetch assessment history failed: {e}")
         return []
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# DAILY CHECK-IN CRUD
+# ═══════════════════════════════════════════════════════════════════════
+
+_CHECKIN_COLUMNS = """
+    id, user_id, checkin_date, mood_rating, stress_level, sleep_quality,
+    energy_level, sleep_hours, activity_level, social_interaction,
+    exercise_minutes, notes, created_at, updated_at
+"""
+
+
+def _isoformat(value: Any) -> str:
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def _daily_checkin_from_row(row) -> Dict[str, Any]:
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "local_date": _isoformat(row[2]),
+        "mood_rating": row[3],
+        "stress_level": row[4],
+        "sleep_quality": row[5],
+        "energy_level": row[6],
+        "sleep_hours": row[7],
+        "activity_level": row[8],
+        "social_interaction": row[9],
+        "exercise_minutes": row[10],
+        "notes": row[11] or "",
+        "created_at": _isoformat(row[12]),
+        "updated_at": _isoformat(row[13]),
+    }
+
+
+def save_daily_checkin(
+    user_id: str,
+    local_date: date,
+    mood_rating: int,
+    stress_level: int,
+    sleep_quality: int,
+    energy_level: int,
+    sleep_hours: Optional[float] = None,
+    activity_level: Optional[int] = None,
+    social_interaction: Optional[int] = None,
+    exercise_minutes: Optional[float] = None,
+    notes: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Create or update the authenticated user's check-in for one local calendar date."""
+    now = datetime.now(timezone.utc)
+    clean_notes = (notes or "").strip()
+    pg_values = (
+        user_id, local_date, mood_rating, stress_level, sleep_quality, energy_level,
+        sleep_hours, activity_level, social_interaction, exercise_minutes,
+        clean_notes, now, now,
+    )
+
+    pg_conn = _get_pg_connection()
+    if pg_conn:
+        try:
+            with pg_conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    INSERT INTO daily_checkins (
+                        user_id, checkin_date, mood_rating, stress_level, sleep_quality,
+                        energy_level, sleep_hours, activity_level, social_interaction,
+                        exercise_minutes, notes, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id, checkin_date) DO UPDATE SET
+                        mood_rating = excluded.mood_rating,
+                        stress_level = excluded.stress_level,
+                        sleep_quality = excluded.sleep_quality,
+                        energy_level = excluded.energy_level,
+                        sleep_hours = excluded.sleep_hours,
+                        activity_level = excluded.activity_level,
+                        social_interaction = excluded.social_interaction,
+                        exercise_minutes = excluded.exercise_minutes,
+                        notes = excluded.notes,
+                        updated_at = excluded.updated_at
+                    RETURNING {_CHECKIN_COLUMNS};
+                    """,
+                    pg_values,
+                )
+                row = cur.fetchone()
+            pg_conn.commit()
+            return _daily_checkin_from_row(row) if row else None
+        except Exception as e:
+            logger.error(f"PostgreSQL daily check-in save failed: {e}. Falling back to SQLite.")
+            try:
+                pg_conn.rollback()
+            except Exception:
+                pass
+        finally:
+            _put_pg_connection(pg_conn)
+
+    conn = None
+    try:
+        conn = _get_sqlite_connection()
+        cur = conn.cursor()
+        sqlite_values = (
+            user_id, local_date.isoformat(), mood_rating, stress_level, sleep_quality,
+            energy_level, sleep_hours, activity_level, social_interaction,
+            exercise_minutes, clean_notes, now.isoformat(), now.isoformat(),
+        )
+        cur.execute(
+            f"""
+            INSERT INTO daily_checkins (
+                user_id, checkin_date, mood_rating, stress_level, sleep_quality,
+                energy_level, sleep_hours, activity_level, social_interaction,
+                exercise_minutes, notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, checkin_date) DO UPDATE SET
+                mood_rating = excluded.mood_rating,
+                stress_level = excluded.stress_level,
+                sleep_quality = excluded.sleep_quality,
+                energy_level = excluded.energy_level,
+                sleep_hours = excluded.sleep_hours,
+                activity_level = excluded.activity_level,
+                social_interaction = excluded.social_interaction,
+                exercise_minutes = excluded.exercise_minutes,
+                notes = excluded.notes,
+                updated_at = excluded.updated_at
+            RETURNING {_CHECKIN_COLUMNS};
+            """,
+            sqlite_values,
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return _daily_checkin_from_row(row) if row else None
+    except Exception as e:
+        logger.error(f"SQLite daily check-in save failed: {e}")
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def get_daily_checkin(user_id: str, local_date: date) -> Optional[Dict[str, Any]]:
+    """Return one user's check-in for a local date, or raise if both databases fail."""
+    pg_conn = _get_pg_connection()
+    if pg_conn:
+        try:
+            with pg_conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_CHECKIN_COLUMNS} FROM daily_checkins "
+                    "WHERE user_id = %s AND checkin_date = %s;",
+                    (user_id, local_date),
+                )
+                row = cur.fetchone()
+            return _daily_checkin_from_row(row) if row else None
+        except Exception as e:
+            logger.error(f"PostgreSQL daily check-in lookup failed: {e}. Falling back to SQLite.")
+        finally:
+            _put_pg_connection(pg_conn)
+
+    conn = None
+    try:
+        conn = _get_sqlite_connection()
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT {_CHECKIN_COLUMNS} FROM daily_checkins "
+            "WHERE user_id = ? AND checkin_date = ?;",
+            (user_id, local_date.isoformat()),
+        )
+        row = cur.fetchone()
+        return _daily_checkin_from_row(row) if row else None
+    except Exception as e:
+        logger.error(f"SQLite daily check-in lookup failed: {e}")
+        raise RuntimeError("Daily check-in lookup failed") from e
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def get_recent_daily_checkins(user_id: str, limit: int = 7) -> List[Dict[str, Any]]:
+    """Return recent self-reports for therapy context without making therapy depend on them."""
+    pg_conn = _get_pg_connection()
+    if pg_conn:
+        try:
+            with pg_conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT {_CHECKIN_COLUMNS} FROM daily_checkins "
+                    "WHERE user_id = %s ORDER BY checkin_date DESC LIMIT %s;",
+                    (user_id, limit),
+                )
+                rows = cur.fetchall()
+            return [_daily_checkin_from_row(row) for row in rows]
+        except Exception as e:
+            logger.error(f"PostgreSQL recent check-in lookup failed: {e}. Falling back to SQLite.")
+        finally:
+            _put_pg_connection(pg_conn)
+
+    conn = None
+    try:
+        conn = _get_sqlite_connection()
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT {_CHECKIN_COLUMNS} FROM daily_checkins "
+            "WHERE user_id = ? ORDER BY checkin_date DESC LIMIT ?;",
+            (user_id, limit),
+        )
+        rows = cur.fetchall()
+        return [_daily_checkin_from_row(row) for row in rows]
+    except Exception as e:
+        logger.error(f"SQLite recent check-in lookup failed: {e}")
+        return []
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════════════

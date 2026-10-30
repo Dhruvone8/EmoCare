@@ -72,6 +72,32 @@ export interface BehavioralResponse {
   probabilities: RiskProbabilities;
 }
 
+// ── Daily Check-ins ─────────────────────────────────────────────────────
+export interface DailyCheckInFormData extends BehavioralRequest {
+  mood_rating: number;
+  stress_level: number;
+  sleep_quality: number;
+  energy_level: number;
+  notes: string;
+}
+
+export interface DailyCheckInRequest extends DailyCheckInFormData {
+  local_date: string;
+}
+
+export interface DailyCheckIn extends DailyCheckInRequest {
+  id: number;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TodayCheckInResponse {
+  local_date: string;
+  completed: boolean;
+  check_in: DailyCheckIn | null;
+}
+
 // ── Multimodal Fusion ────────────────────────────────────────────────
 export interface ModalityBreakdown {
   text: TextResponse | null;

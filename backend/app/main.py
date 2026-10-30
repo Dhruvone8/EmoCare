@@ -10,6 +10,8 @@ Endpoints:
   POST /api/predict/speech                  — Audio emotion detection
   POST /api/predict/behavioral              — Passive sensing risk analysis
   POST /api/predict/multimodal              — Full late fusion engine
+  GET  /api/checkins/today                  — Get local-date check-in status
+  POST /api/checkins                        — Save a daily check-in
   GET  /api/assessment/questions/{test_type} — PHQ-9 / GAD-7 questionnaire
   POST /api/assessment/submit               — Submit PHQ-9 / GAD-7 responses
   POST /api/therapy/session/start           — Start a therapy session
@@ -21,6 +23,7 @@ Endpoints:
 """
 import os
 import logging
+from datetime import date
 from typing import Optional
 from contextlib import asynccontextmanager
 
@@ -52,6 +55,9 @@ from .schemas import (
     BehavioralRequest,
     BehavioralResponse,
     MultimodalResponse,
+    DailyCheckInRequest,
+    DailyCheckInResponse,
+    TodayCheckInResponse,
     AssessmentSubmissionRequest,
     AssessmentResponse,
     AssessmentHistoryResponse,
@@ -89,6 +95,8 @@ from .db import (
     get_recent_session_summaries,
     get_all_user_sessions,
     get_user_assessment_history,
+    save_daily_checkin,
+    get_daily_checkin,
 )
 from .therapy import process_chat_turn, generate_session_summary
 from .engine.voice_therapy import process_voice_turn, generate_voice_greeting
@@ -224,6 +232,41 @@ async def api_predict_behavioral(request: BehavioralRequest):
     if not models.behavioral_clf:
         raise HTTPException(status_code=503, detail="Behavioral model not loaded")
     return predict_behavioral(request)
+
+
+@app.get("/api/checkins/today", response_model=TodayCheckInResponse)
+async def get_today_daily_checkin(
+    local_date: date,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Return whether the authenticated user completed their local-date check-in."""
+    try:
+        check_in = get_daily_checkin(current_user.id, local_date)
+    except Exception as e:
+        logger.error(f"Daily check-in status unavailable: {e}")
+        raise HTTPException(status_code=503, detail="Daily check-in is temporarily unavailable")
+
+    return TodayCheckInResponse(
+        local_date=local_date,
+        completed=check_in is not None,
+        check_in=DailyCheckInResponse(**check_in) if check_in else None,
+    )
+
+
+@app.post("/api/checkins", response_model=DailyCheckInResponse)
+async def submit_daily_checkin(
+    request: DailyCheckInRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Save or update the authenticated user's check-in for their local calendar date."""
+    try:
+        check_in = save_daily_checkin(user_id=current_user.id, **request.model_dump())
+    except Exception as e:
+        logger.error(f"Daily check-in save unavailable: {e}")
+        check_in = None
+    if check_in is None:
+        raise HTTPException(status_code=503, detail="Unable to save daily check-in right now")
+    return DailyCheckInResponse(**check_in)
 
 
 @app.post("/api/predict/multimodal", response_model=MultimodalResponse)

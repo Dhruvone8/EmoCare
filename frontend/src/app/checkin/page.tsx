@@ -1,48 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { predictBehavioral } from "@/lib/api";
-import type { BehavioralResponse, BehavioralRequest } from "@/types/api";
-
-const MOOD_OPTIONS = [
-  { value: 1, emoji: "😞", label: "Really low" },
-  { value: 2, emoji: "😕", label: "Not great" },
-  { value: 3, emoji: "😐", label: "Okay" },
-  { value: 4, emoji: "🙂", label: "Pretty good" },
-  { value: 5, emoji: "😊", label: "Great" },
-];
-
-const STRESS_OPTIONS = [
-  { value: 1, emoji: "🧘", label: "Relaxed" },
-  { value: 2, emoji: "😌", label: "Mild" },
-  { value: 3, emoji: "😐", label: "Moderate" },
-  { value: 4, emoji: "😰", label: "High" },
-  { value: 5, emoji: "🤯", label: "Overwhelmed" },
-];
-
-const SLEEP_QUALITY_OPTIONS = [
-  { value: 1, emoji: "😴", label: "Terrible" },
-  { value: 2, emoji: "😪", label: "Poor" },
-  { value: 3, emoji: "🛏️", label: "Okay" },
-  { value: 4, emoji: "😌", label: "Good" },
-  { value: 5, emoji: "✨", label: "Great" },
-];
-
-const SOCIAL_OPTIONS = [
-  { value: 1, emoji: "🏠", label: "Alone all day" },
-  { value: 2, emoji: "👤", label: "Minimal" },
-  { value: 3, emoji: "💬", label: "Some" },
-  { value: 4, emoji: "👥", label: "Good amount" },
-  { value: 5, emoji: "🎉", label: "Very social" },
-];
-
-const ACTIVITY_OPTIONS = [
-  { value: 1, emoji: "🛋️", label: "Sedentary" },
-  { value: 2, emoji: "🚶", label: "Light" },
-  { value: 3, emoji: "🏃", label: "Moderate" },
-  { value: 4, emoji: "💪", label: "Active" },
-  { value: 5, emoji: "🏋️", label: "Very active" },
-];
+import { DailyCheckInForm } from "@/components/DailyCheckInForm";
+import type { BehavioralResponse } from "@/types/api";
 
 function translateRisk(tier: string): { emoji: string; title: string; message: string; bg: string; border: string } {
   switch (tier) {
@@ -74,34 +34,7 @@ function translateRisk(tier: string): { emoji: string; title: string; message: s
 }
 
 export default function CheckinPage() {
-  const [formData, setFormData] = useState<BehavioralRequest>({
-    sleep_hours: 7,
-    sleep_quality: 3,
-    activity_level: 3,
-    social_interaction: 3,
-    stress_level: 3,
-    exercise_minutes: 30,
-    mood_rating: 3,
-  });
-
-  const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BehavioralResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await predictBehavioral(formData);
-      setResult(res);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const riskInfo = result ? translateRisk(result.predicted_risk_tier) : null;
 
   return (
@@ -120,120 +53,7 @@ export default function CheckinPage() {
       {/* ── Layout ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-[var(--spacing-gutter)]">
         {/* Left: Form */}
-        <form
-          onSubmit={handleSubmit}
-          className="col-span-1 md:col-span-7 flex flex-col gap-4"
-        >
-          <div className="glass-panel rounded-xl p-6 bg-surface-container-lowest flex flex-col gap-6">
-            {/* Mood */}
-            <EmojiSelector
-              label="How's your mood?"
-              options={MOOD_OPTIONS}
-              value={formData.mood_rating || 3}
-              onChange={(val) => setFormData({ ...formData, mood_rating: val })}
-            />
-
-            {/* Stress */}
-            <EmojiSelector
-              label="How stressed do you feel?"
-              options={STRESS_OPTIONS}
-              value={formData.stress_level || 3}
-              onChange={(val) => setFormData({ ...formData, stress_level: val })}
-            />
-
-            {/* Sleep Quality */}
-            <EmojiSelector
-              label="How did you sleep last night?"
-              options={SLEEP_QUALITY_OPTIONS}
-              value={formData.sleep_quality || 3}
-              onChange={(val) => setFormData({ ...formData, sleep_quality: val })}
-            />
-
-            {/* Sleep Hours */}
-            <div className="flex flex-col gap-2">
-              <label className="font-sans text-[15px] font-medium text-on-surface">
-                Hours of sleep
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min="0"
-                  max="14"
-                  step="0.5"
-                  value={formData.sleep_hours || 7}
-                  onChange={(e) =>
-                    setFormData({ ...formData, sleep_hours: parseFloat(e.target.value) })
-                  }
-                  className="flex-1 accent-primary h-2 rounded-lg cursor-pointer"
-                />
-                <span className="font-mono text-[15px] font-semibold text-primary w-16 text-right">
-                  {formData.sleep_hours} hrs
-                </span>
-              </div>
-            </div>
-
-            {/* Social */}
-            <EmojiSelector
-              label="Social interaction today?"
-              options={SOCIAL_OPTIONS}
-              value={formData.social_interaction || 3}
-              onChange={(val) => setFormData({ ...formData, social_interaction: val })}
-            />
-
-            {/* Activity */}
-            <EmojiSelector
-              label="Physical activity?"
-              options={ACTIVITY_OPTIONS}
-              value={formData.activity_level || 3}
-              onChange={(val) => setFormData({ ...formData, activity_level: val })}
-            />
-
-            {/* Exercise Minutes */}
-            <div className="flex flex-col gap-2">
-              <label className="font-sans text-[15px] font-medium text-on-surface">
-                Exercise today (minutes)
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min="0"
-                  max="120"
-                  step="5"
-                  value={formData.exercise_minutes || 0}
-                  onChange={(e) =>
-                    setFormData({ ...formData, exercise_minutes: parseInt(e.target.value, 10) })
-                  }
-                  className="flex-1 accent-primary h-2 rounded-lg cursor-pointer"
-                />
-                <span className="font-mono text-[15px] font-semibold text-primary w-16 text-right">
-                  {formData.exercise_minutes} min
-                </span>
-              </div>
-            </div>
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-primary text-on-primary rounded-full font-sans text-[14px] font-medium hover:bg-primary-container disabled:opacity-50 transition-all flex items-center justify-center gap-2 mt-2"
-            >
-              {loading ? (
-                <>
-                  <div className="w-4 h-4 rounded-full border-2 border-on-primary border-t-transparent animate-spin" />
-                  <span>Thinking...</span>
-                </>
-              ) : (
-                <span>Complete check-in</span>
-              )}
-            </button>
-          </div>
-
-          {error && (
-            <div className="p-4 rounded-lg bg-error-container text-on-error-container text-sm font-sans">
-              {error}
-            </div>
-          )}
-        </form>
+        <DailyCheckInForm variant="page" onResult={setResult} />
 
         {/* Right: Results */}
         <div className="col-span-1 md:col-span-5 flex flex-col gap-4">
@@ -290,46 +110,6 @@ export default function CheckinPage() {
         </div>
       </div>
     </>
-  );
-}
-
-/* ── Emoji Selector ────────────────────────────────────────────────── */
-function EmojiSelector({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: { value: number; emoji: string; label: string }[];
-  value: number;
-  onChange: (val: number) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <label className="font-sans text-[15px] font-medium text-on-surface">
-        {label}
-      </label>
-      <div className="flex gap-2">
-        {options.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={`flex-1 flex flex-col items-center gap-1 py-3 px-1 rounded-xl border-2 transition-all duration-200 ${
-              value === opt.value
-                ? "border-primary bg-primary/5 shadow-sm scale-105"
-                : "border-outline-variant/20 bg-surface hover:border-outline-variant/50"
-            }`}
-          >
-            <span className="text-2xl">{opt.emoji}</span>
-            <span className="font-sans text-[11px] text-on-surface-variant leading-tight text-center">
-              {opt.label}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
   );
 }
 

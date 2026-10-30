@@ -4,6 +4,7 @@ Pydantic schemas for EmoCare API request/response validation.
 All response contracts are designed so the Next.js frontend can consume them
 with strict TypeScript types — no ambiguous fields.
 """
+from datetime import date
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -66,6 +67,33 @@ class BehavioralRequest(BaseModel):
 class BehavioralResponse(BaseModel):
     predicted_risk_tier: str
     probabilities: RiskProbabilities
+
+
+# ── Daily Check-ins ─────────────────────────────────────────────────────
+class DailyCheckInRequest(BaseModel):
+    local_date: date
+    mood_rating: int = Field(..., ge=1, le=5)
+    stress_level: int = Field(..., ge=1, le=5)
+    sleep_quality: int = Field(..., ge=1, le=5)
+    energy_level: int = Field(..., ge=1, le=5)
+    sleep_hours: Optional[float] = Field(None, ge=0, le=24)
+    activity_level: Optional[int] = Field(None, ge=1, le=5)
+    social_interaction: Optional[int] = Field(None, ge=1, le=5)
+    exercise_minutes: Optional[float] = Field(None, ge=0)
+    notes: str = Field(default="", max_length=1000)
+
+
+class DailyCheckInResponse(DailyCheckInRequest):
+    id: int
+    user_id: str
+    created_at: str
+    updated_at: str
+
+
+class TodayCheckInResponse(BaseModel):
+    local_date: date
+    completed: bool
+    check_in: Optional[DailyCheckInResponse] = None
 
 
 # ── Multimodal Fusion ─────────────────────────────────────────────────

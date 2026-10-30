@@ -2,10 +2,10 @@
 EmoCare Voice Therapy Pipeline — Ultra-fast parallel audio-in → audio-out orchestrator.
 
 Latency Optimizations:
-1. True parallel execution: Whisper STT, acoustic emotion analysis, session memory, and the
-   latest saved assessment all execute concurrently at turn start.
+1. True parallel execution: Whisper STT, acoustic emotion analysis, session memory, the
+   latest saved assessment, and recent check-ins all execute concurrently at turn start.
 2. Acoustic SER runs on a background worker thread with prosodic pyin calculation disabled.
-3. Database writes (message persistence) are fire-and-forget background tasks.
+3. Message persistence runs on worker threads, and assistant saves complete before returning.
 4. Persistent connection pool reuses TCP/TLS sessions for STT, LLM, and TTS.
 5. Voice-mode LLM tokens are capped at 280 tokens with a reflective, tool-gated prompt.
 6. Generated replies are sanitized before the same final text is persisted and sent to ElevenLabs TTS.
@@ -19,7 +19,12 @@ from .stt_client import transcribe_audio
 from .tts_client import synthesize_speech
 from ..inference import predict_speech, predict_text
 from ..model_loader import models
-from ..therapy import _build_assessment_context, _build_crisis_response, _is_crisis_signal
+from ..therapy import (
+    _build_assessment_context,
+    _build_crisis_response,
+    _get_daily_checkin_context,
+    _is_crisis_signal,
+)
 from .llm_client import chat_completion
 from .therapy_session_manager import (
     STAGE_EXPLORING,
@@ -151,6 +156,9 @@ async def process_voice_turn(
     assessment_history_task = asyncio.create_task(
         asyncio.to_thread(get_user_assessment_history, user_id, 1)
     )
+    checkin_context_task = asyncio.create_task(
+        asyncio.to_thread(_get_daily_checkin_context, user_id)
+    )
 
     # Await transcription and acoustic emotion concurrently
     transcript, (speech_emotion, speech_risk_tier) = await asyncio.gather(
@@ -232,8 +240,8 @@ async def process_voice_turn(
         }
 
     # ── Step 5: Build LLM Context from Prefetched DB Results ──────────
-    prior_summaries, session_msgs, assessment_history = await asyncio.gather(
-        prior_summaries_task, session_msgs_task, assessment_history_task
+    prior_summaries, session_msgs, assessment_history, checkin_context = await asyncio.gather(
+        prior_summaries_task, session_msgs_task, assessment_history_task, checkin_context_task
     )
 
     llm_messages = []
@@ -248,6 +256,15 @@ async def process_voice_turn(
         llm_messages.append({
             "role": "assistant",
             "content": "I'll use this historical assessment only when it is relevant."
+        })
+    if checkin_context:
+        llm_messages.append({
+            "role": "user",
+            "content": f"[SYSTEM CONTEXT — do not repeat this to the user]\n{checkin_context}"
+        })
+        llm_messages.append({
+            "role": "assistant",
+            "content": "I'll use these self-reported wellbeing snapshots only when they are relevant."
         })
 
     # Inject session memory
@@ -315,13 +332,16 @@ async def process_voice_turn(
         recent_history=session_msgs,
     )
 
-    # Persist assistant reply in background
-    asyncio.create_task(
+    assistant_save_task = asyncio.create_task(
         asyncio.to_thread(save_therapy_message, session_id, "assistant", reply_text)
     )
 
     # ── Step 7: Ultra-fast TTS on Reply ──────────────────────────────
     audio_b64 = await synthesize_speech(reply_text)
+    try:
+        await assistant_save_task
+    except Exception as e:
+        logger.warning(f"Assistant message persistence failed (non-fatal): {e}")
 
     # Determine urgency
     urgency = "WARNING" if final_risk_tier in ("High", "Moderate") else "STABLE"
