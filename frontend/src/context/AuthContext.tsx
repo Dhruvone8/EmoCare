@@ -100,7 +100,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const normalizedEmail = email.trim().toLowerCase();
+    const { data: current } = await supabase.auth.getSession();
+    if (current.session?.user.email?.toLowerCase() === normalizedEmail) {
+      setSession(current.session);
+      setUser(current.session.user);
+      setLoading(false);
+      setAuthNotice(`Signed in as ${current.session.user.email ?? "your account"}.`);
+      closeAuthModal();
+      return { error: null };
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
     if (error) return { error };
     if (!data.session) {
       return {

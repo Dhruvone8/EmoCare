@@ -1,7 +1,28 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import type { AuthError } from "@supabase/supabase-js";
 import { useAuth } from "@/context/AuthContext";
+
+const AUTH_RETRY_COOLDOWN_SECONDS = 15 * 60;
+
+function isRateLimitError(error: AuthError): boolean {
+  return (
+    error.code === "over_email_rate_limit" ||
+    error.code === "over_request_rate_limit" ||
+    error.message.toLowerCase().includes("rate limit")
+  );
+}
+
+function getAuthErrorMessage(error: AuthError): string {
+  if (isRateLimitError(error)) {
+    return "Too many authentication requests. Please wait 15 minutes before trying again. If you recently signed up, use the latest confirmation email instead of submitting again.";
+  }
+  if (error.code === "email_not_confirmed") {
+    return "Please confirm your email using the most recent message, then sign in.";
+  }
+  return error.message;
+}
 
 export function AuthModal() {
   const {
@@ -20,11 +41,36 @@ export function AuthModal() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [retryAfter, setRetryAfter] = useState(0);
+
+  useEffect(() => {
+    if (retryAfter <= 0) return;
+    const timeout = window.setTimeout(() => {
+      setRetryAfter((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearTimeout(timeout);
+  }, [retryAfter]);
+
+  const changeMode = (mode: "login" | "signup") => {
+    setAuthModalMode(mode);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+  };
+
+  const handleAuthError = (error: AuthError) => {
+    if (isRateLimitError(error)) {
+      setRetryAfter(AUTH_RETRY_COOLDOWN_SECONDS);
+    }
+    setErrorMsg(getAuthErrorMessage(error));
+  };
 
   if (!isAuthModalOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || retryAfter > 0 || (authModalMode === "signup" && successMsg)) {
+      return;
+    }
     setErrorMsg(null);
     setSuccessMsg(null);
 
@@ -41,20 +87,23 @@ export function AuthModal() {
     }
 
     setLoading(true);
-    if (authModalMode === "signup") {
-      const { error } = await signUp(email, password, fullName, parsedAge);
-      if (error) {
-        setErrorMsg(error.message);
+    try {
+      if (authModalMode === "signup") {
+        const { error } = await signUp(email, password, fullName, parsedAge);
+        if (error) {
+          handleAuthError(error);
+        } else {
+          setSuccessMsg("Account created! Check your email to confirm if required.");
+        }
       } else {
-        setSuccessMsg("Account created! Check your email to confirm if required.");
+        const { error } = await signIn(email, password);
+        if (error) handleAuthError(error);
       }
-    } else {
-      const { error } = await signIn(email, password);
-      if (error) {
-        setErrorMsg(error.message);
-      }
+    } catch {
+      setErrorMsg("The authentication service could not be reached. Please try again later.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -92,7 +141,7 @@ export function AuthModal() {
           <button
             type="button"
             onClick={() => {
-              setAuthModalMode("login");
+              changeMode("login");
               setErrorMsg(null);
             }}
             className={`flex-1 pb-3 text-sm font-medium transition-colors relative ${
@@ -106,7 +155,7 @@ export function AuthModal() {
           <button
             type="button"
             onClick={() => {
-              setAuthModalMode("signup");
+              changeMode("signup");
               setErrorMsg(null);
             }}
             className={`flex-1 pb-3 text-sm font-medium transition-colors relative ${
@@ -208,7 +257,11 @@ export function AuthModal() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={
+              loading ||
+              retryAfter > 0 ||
+              (authModalMode === "signup" && Boolean(successMsg))
+            }
             className="w-full py-2.5 px-4 rounded-lg bg-primary hover:bg-primary/90 text-on-primary font-medium text-sm transition-all duration-150 shadow-md hover:shadow-lg disabled:opacity-50 flex items-center justify-center gap-2 mt-6 cursor-pointer"
           >
             {loading ? (
@@ -218,6 +271,10 @@ export function AuthModal() {
                 </span>
                 <span>Processing...</span>
               </>
+            ) : retryAfter > 0 ? (
+              `Retry in ${Math.floor(retryAfter / 60)}:${String(retryAfter % 60).padStart(2, "0")}`
+            ) : authModalMode === "signup" && successMsg ? (
+              "Check your email"
             ) : authModalMode === "login" ? (
               "Sign In"
             ) : (
@@ -232,7 +289,7 @@ export function AuthModal() {
               Don&apos;t have an account?{" "}
               <button
                 type="button"
-                onClick={() => setAuthModalMode("signup")}
+                onClick={() => changeMode("signup")}
                 className="text-primary font-semibold hover:underline"
               >
                 Sign Up
@@ -243,7 +300,7 @@ export function AuthModal() {
               Already have an account?{" "}
               <button
                 type="button"
-                onClick={() => setAuthModalMode("login")}
+                onClick={() => changeMode("login")}
                 className="text-primary font-semibold hover:underline"
               >
                 Sign In
