@@ -47,23 +47,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authModalMode, setAuthModalMode] = useState<"login" | "signup">("login");
 
   useEffect(() => {
+    let isMounted = true;
+
     // 1. Get current active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (isMounted) {
+          setSession(session);
+          setUser(session?.user ?? null);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to restore Supabase session:", err);
+        if (isMounted) {
+          setLoading(false);
+        }
+      });
 
     // 2. Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (isMounted) {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
       }
-    );
+    });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -78,15 +93,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (!error) {
+      if (data?.session) {
+        setSession(data.session);
+        setUser(data.user ?? null);
+      }
       closeAuthModal();
     }
     return { error };
   };
 
   const signUp = async (email: string, password: string, fullName: string, age: number) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -97,6 +116,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
     if (!error) {
+      if (data?.session) {
+        setSession(data.session);
+        setUser(data.user ?? null);
+      }
       closeAuthModal();
     }
     return { error };
@@ -104,6 +127,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setSession(null);
+    setUser(null);
   };
 
   return (

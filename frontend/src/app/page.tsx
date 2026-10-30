@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-const emptySubscribe = () => () => {};
 import Link from "next/link";
 import { healthCheck } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -16,6 +15,24 @@ interface BaselineAssessment {
   severity_band: string;
   risk_tier: "Low" | "Moderate" | "High";
   date: string;
+}
+
+const emptySubscribe = () => () => {};
+let cachedRawAssessment: string | null = null;
+let cachedAssessmentObj: BaselineAssessment | null = null;
+
+function getBaselineSnapshot(): BaselineAssessment | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("emocare_last_assessment");
+    if (raw !== cachedRawAssessment) {
+      cachedRawAssessment = raw;
+      cachedAssessmentObj = raw ? JSON.parse(raw) : null;
+    }
+    return cachedAssessmentObj;
+  } catch {
+    return null;
+  }
 }
 
 function getGreeting(): string {
@@ -36,14 +53,7 @@ export default function DashboardPage() {
   );
   const baseline = useSyncExternalStore(
     emptySubscribe,
-    (): BaselineAssessment | null => {
-      try {
-        const stored = localStorage.getItem("emocare_last_assessment");
-        return stored ? JSON.parse(stored) : null;
-      } catch {
-        return null;
-      }
-    },
+    getBaselineSnapshot,
     () => null
   );
   const [isBreathingModalOpen, setIsBreathingModalOpen] = useState(false);
