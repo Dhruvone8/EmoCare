@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+
+const emptySubscribe = () => () => {};
 import Link from "next/link";
 import { healthCheck } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -27,19 +29,23 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [baseline] = useState<BaselineAssessment | null>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("emocare_last_assessment");
-      if (stored) {
-        try {
-          return JSON.parse(stored);
-        } catch {
-          return null;
-        }
+  const isMounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
+  const baseline = useSyncExternalStore(
+    emptySubscribe,
+    (): BaselineAssessment | null => {
+      try {
+        const stored = localStorage.getItem("emocare_last_assessment");
+        return stored ? JSON.parse(stored) : null;
+      } catch {
+        return null;
       }
-    }
-    return null;
-  });
+    },
+    () => null
+  );
   const [isBreathingModalOpen, setIsBreathingModalOpen] = useState(false);
 
   useEffect(() => {
@@ -62,7 +68,7 @@ export default function DashboardPage() {
       {/* ── Welcome Section ───────────────────────────────────────── */}
       <section className="max-w-4xl space-y-3">
         <h1 className="font-sans text-3xl sm:text-4xl md:text-5xl font-bold text-on-surface tracking-tight leading-tight">
-          <span>{getGreeting()}, {userName}.</span>{" "}
+          <span>{getGreeting()}, {isMounted ? userName : "Friend"}.</span>{" "}
           <span className="inline-block transition-transform duration-300 hover:rotate-12 cursor-default select-none origin-bottom-right">
             👋
           </span>
@@ -78,7 +84,7 @@ export default function DashboardPage() {
       </section>
 
       {/* ── Onboarding Banner (If no baseline test completed yet) ── */}
-      {!baseline && (
+      {isMounted && !baseline && (
         <section className="glass-panel rounded-2xl sm:rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-primary/10 via-surface-bright/70 to-secondary-container/20 border border-primary/25 shadow-sanctuary hover:shadow-sanctuary-hover transition-all duration-300 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="flex items-start gap-4 max-w-xl">
             <div className="p-3 sm:p-3.5 rounded-2xl bg-primary text-on-primary shadow-md shrink-0 flex items-center justify-center">

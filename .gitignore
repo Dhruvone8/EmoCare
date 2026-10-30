@@ -26,6 +26,7 @@ logs/*
 # Environment variables & secrets
 .env
 .env.*
+!.env.example
 .env.local
 backend/.env
 
@@ -34,3 +35,8 @@ backend/.env
 .idea/
 .DS_Store
 Thumbs.db
+
+# Scratch report extraction artifacts
+extracted_report_images/
+extracted_report_text.json
+scratch_chapters/

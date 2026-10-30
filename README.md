@@ -93,17 +93,29 @@ The earlier perfect multimodal scores were produced by a preliminary synthetic s
    ```
 
 2. **Environment Setup**
+   - Root / Backend:
+     ```bash
+     cp .env.example .env
+     ```
+     Ensure `DATABASE_URL` (or leave empty for SQLite), `GUEST_SESSION_SECRET` (at least 32 characters), and your chosen LLM API key (`GROQ_API_KEY` or `OPENROUTER_API_KEY`) are set.
+   - Frontend:
+     ```bash
+     cd frontend
+     cp .env.example .env.local
+     ```
+
+3. **Run Tests**
    ```bash
-   cp .env.example .env
+   pytest
    ```
 
-3. **Run FastAPI Backend**
+4. **Run FastAPI Backend**
    ```bash
    cd backend
-   uvicorn app.main:app --reload
+   uvicorn app.main:app --reload --port 8000
    ```
 
-4. **Run Next.js Frontend**
+5. **Run Next.js Frontend**
    ```bash
    cd frontend
    npm install
